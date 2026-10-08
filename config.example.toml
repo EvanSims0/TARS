@@ -1,0 +1,49 @@
+# TARS configuration. Copy to %APPDATA%\TARS\config.toml (or run `tars init`).
+# API keys never go in this file: use `tars set-key NAME`, which stores them
+# in Windows Credential Manager.
+
+user_name = ""            # how TARS refers to you
+# vault_path = "C:/Users/you/TARS Vault"     # default: %APPDATA%\TARS\vault
+# backup_path = "D:/Backups/TARS Vault"      # default: %APPDATA%\TARS\vault-backups
+
+[brain]
+fast_model = "claude-haiku-5-5"
+fast_effort = "low"
+fast_thinking = false
+deep_model = "claude-sonnet-5-5"
+deep_effort = "medium"
+
+[voice]
+push_to_talk_key = "<ctrl>+<alt>+space"
+mute_key = "<ctrl>+<alt>+m"
+follow_up_seconds = 8.0
+stt_model = "flux-general-en"
+tts_model = "eleven_flash_v2_5"
+tts_voice_id = ""          # an original ElevenLabs voice you choose
+# input_device_index = 1   # leave unset for the Windows default devices
+# output_device_index = 3
+
+[spend]
+monthly_cap_usd = 25.0
+escalation_cutoff = 0.8
+deepgram_usd_per_minute = 0.0077
+elevenlabs_usd_per_1k_chars = 0.05
+
+[alerts]
+max_per_day = 3
+quiet_start = "22:00"
+quiet_end = "08:00"
+
+[todoist]
+shopping_project = "Shopping"
+default_store = "Grocery"
+
+[location]
+home_address = ""
+# latitude = 40.71
+# longitude = -74.01
+timezone = ""              # e.g. "America/New_York"
+
+[privacy]
+transcript_days = 7
+backup_days = 30

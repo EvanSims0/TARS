@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+# Local runtime data and secrets never belong in the repo
+config.toml
+data/
+*.token.json
