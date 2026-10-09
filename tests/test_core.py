@@ -165,3 +165,19 @@ def test_urgency_rules_reach_the_prompt():
 
     text = Config().instructions()
     assert "money problems" in text and "personal information" in text and "newsletters" in text
+
+
+def test_forget_matches_whole_words_only(tmp_path):
+    vault = Vault(tmp_path / "v")
+    vault.remember("Al likes tea", "People")
+    vault.remember("Always leave by eight", "Routines")
+    assert vault.forget("Al") == ["Al likes tea"]
+    assert "Always leave by eight" in vault.snapshot()
+
+
+def test_remember_survives_a_deleted_heading(tmp_path):
+    vault = Vault(tmp_path / "v")
+    vault.ensure()
+    vault.file.write_text("# TARS memory\n", encoding="utf-8")
+    assert vault.remember("Jess's birthday is March 3", "People") == "Noted."
+    assert "## People\n- Jess's birthday is March 3" in vault.file.read_text(encoding="utf-8")

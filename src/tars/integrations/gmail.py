@@ -6,6 +6,7 @@ text and fenced as untrusted data. Sending always goes through the gate.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from email.message import EmailMessage
 from typing import Any
@@ -48,6 +49,15 @@ def extract_body(payload: dict[str, Any]) -> str:
     return html_to_text("\n".join(html))
 
 
+def reply_subject(subject: str | None, original: str, is_reply: bool) -> str:
+    """The subject actually used: the given one, or "Re: <original>" for a reply."""
+    if subject:
+        return subject
+    if not is_reply:
+        return ""
+    return original if original.lower().startswith("re:") else f"Re: {original}"
+
+
 def build_raw(to: list[str], subject: str, body: str, headers: dict[str, str] | None = None) -> str:
     msg = EmailMessage()
     msg["To"] = ", ".join(to)
@@ -64,13 +74,12 @@ class Gmail:
 
     async def search(self, query: str, limit: int) -> list[dict[str, Any]]:
         listing = await self.s.request("GET", f"{API}/messages", params={"q": query, "maxResults": limit})
-        out = []
-        for ref in listing.get("messages", []):
-            out.append(await self.s.request(
-                "GET", f"{API}/messages/{ref['id']}",
-                params={"format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]},
-            ))
-        return out
+        # Fetched together: one at a time adds a round trip per message to the reply time.
+        return list(await asyncio.gather(*(
+            self.s.request("GET", f"{API}/messages/{ref['id']}",
+                           params={"format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]})
+            for ref in listing.get("messages", [])
+        )))
 
     async def get(self, message_id: str) -> dict[str, Any]:
         return await self.s.request("GET", f"{API}/messages/{message_id}", params={"format": "full"})
@@ -159,7 +168,7 @@ def build_tools(gmail: Gmail) -> list[Tool]:
         thread_id, headers, orig_subject = None, {}, ""
         if args.get("reply_to_message_id"):
             thread_id, headers, orig_subject = await gmail.reply_context(args["reply_to_message_id"])
-        subject = args.get("subject") or (orig_subject if orig_subject.lower().startswith("re:") else f"Re: {orig_subject}")
+        subject = reply_subject(args.get("subject"), orig_subject, thread_id is not None)
         draft = await gmail.create_draft(build_raw(args["to"], subject, args["body"], headers), thread_id)
 
         async def undo() -> str:
@@ -173,7 +182,7 @@ def build_tools(gmail: Gmail) -> list[Tool]:
         thread_id, headers, orig_subject = None, {}, ""
         if args.get("reply_to_message_id"):
             thread_id, headers, orig_subject = await gmail.reply_context(args["reply_to_message_id"])
-        subject = args.get("subject") or f"Re: {orig_subject}"
+        subject = reply_subject(args.get("subject"), orig_subject, thread_id is not None)
         await gmail.send(build_raw(args["to"], subject, args["body"], headers), thread_id)
         if args.get("draft_id"):
             try:
@@ -183,13 +192,13 @@ def build_tools(gmail: Gmail) -> list[Tool]:
         return f"Sent to {', '.join(args['to'])}."
 
     async def send_read_back(args: dict[str, Any]) -> str:
-        subject = args.get("subject") or ""
-        reply = ""
+        reply, orig_subject = "", ""
         if args.get("reply_to_message_id"):
             _, _, orig_subject = await gmail.reply_context(args["reply_to_message_id"])
             reply = f" as a reply to '{orig_subject}'"
-            subject = subject or f"Re: {orig_subject}"
-        return f"Email to {', '.join(args['to'])}{reply}, subject '{subject}', saying: \"{args['body']}\"."
+        subject = reply_subject(args.get("subject"), orig_subject, bool(reply))
+        about = f", subject '{subject}'" if subject else ", with no subject"
+        return f"Email to {', '.join(args['to'])}{reply}{about}, saying: \"{args['body']}\"."
 
     compose = {
         "to": {"type": "array", "items": {"type": "string"}, "description": "Email addresses"},
@@ -225,4 +234,4 @@ def build_tools(gmail: Gmail) -> list[Tool]:
     ]
 
 
-__all__ = ["Gmail", "build_tools", "extract_body", "build_raw", "ToolError"]
+__all__ = ["Gmail", "build_tools", "extract_body", "build_raw", "reply_subject", "ToolError"]

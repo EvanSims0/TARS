@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .actions import ActionResult, Channel, ToolError, ToolRegistry
 from .config import BrainConfig
@@ -128,7 +129,7 @@ class Agent:
         user_email: str = "",
         instructions: str = "",
         personality: Personality | None = None,
-        clock: Callable[[], datetime] = datetime.now,
+        clock: Callable[[], datetime] = lambda: datetime.now().astimezone(),
     ):
         self.backend = backend
         self.registry = registry
@@ -174,9 +175,22 @@ class Agent:
             out.append(msg)
         return out
 
-    def _context_line(self, channel: Channel) -> str:
+    def _now(self) -> datetime:
+        """The current time in the user's timezone, with its UTC offset."""
         now = self.clock()
-        tz = f" ({self.timezone})" if self.timezone else ""
+        try:
+            tz = ZoneInfo(self.timezone) if self.timezone else None
+        except (ZoneInfoNotFoundError, ValueError):
+            tz = None
+        if now.tzinfo is None:  # a naive clock reads the user's local time
+            return now.replace(tzinfo=tz) if tz else now.astimezone()
+        return now.astimezone(tz) if tz else now
+
+    def _context_line(self, channel: Channel) -> str:
+        now = self._now()
+        offset = now.strftime("%z")
+        # Calendar times need an offset, and guessing one across a DST change goes wrong.
+        tz = f" ({self.timezone}, UTC{offset[:3]}:{offset[3:]})" if self.timezone else f" (UTC{offset[:3]}:{offset[3:]})"
         who = f" The user is {self.user_name}." if self.user_name else ""
         if self.user_email:
             who += f" Their email address is {self.user_email}."
@@ -369,9 +383,13 @@ class Agent:
         if err := validate_input(args, tool.input_schema):
             return self._tool_result(block.id, f"INVALID_INPUT: {err}", True), ""
 
-        decision = await self.gate.check(
-            tool, args, channel, self.tainted, confirm_own=self.personality.confirm_own_actions
-        )
+        try:
+            # The read-back (or the phone's draft) can call the service too.
+            decision = await self.gate.check(
+                tool, args, channel, self.tainted, confirm_own=self.personality.confirm_own_actions
+            )
+        except ToolError as e:
+            return self._tool_result(block.id, f"{tool.service or tool.name}: {e}", True), ""
         if decision.pending is not None:
             return self._tool_result(
                 block.id, "Held for the user's spoken confirmation. The system is reading it back now; "

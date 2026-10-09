@@ -35,7 +35,13 @@ def run_consent_flow(client_secrets_file: Path) -> None:
 
     flow = InstalledAppFlow.from_client_secrets_file(str(client_secrets_file), SCOPES)
     creds = flow.run_local_server(port=0, prompt="consent", access_type="offline")
-    set_secret(GOOGLE_OAUTH_TOKEN, creds.to_json())
+    if not creds.refresh_token:
+        raise SystemExit("Google didn't return a refresh token; remove TARS at "
+                         "https://myaccount.google.com/permissions and run this again.")
+    # Only what a refresh needs: no access token, and small enough for Windows Credential Manager.
+    set_secret(GOOGLE_OAUTH_TOKEN, json.dumps({
+        "refresh_token": creds.refresh_token, "client_id": creds.client_id, "client_secret": creds.client_secret,
+    }))
 
 
 class GoogleSession:

@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .actions import ActionResult, Channel, Tier, Tool
+from .actions import ActionResult, Channel, Tier, Tool, ToolError
 
 _YES = {
     "yes", "yeah", "yep", "yup", "yes please", "sure", "confirm", "confirmed",
@@ -161,7 +161,12 @@ class ConfirmationGate:
 
         self.pending = None
         tool = self._tools[pending.tool_name]
-        out = await tool.handler(pending.args)
+        try:
+            out = await tool.handler(pending.args)
+        except ToolError as e:
+            return Resolution(executed=False, message=f"That didn't go through: {e}")
+        except Exception:
+            return Resolution(executed=False, message="That didn't go through because of an error on my side.")
         result = out if isinstance(out, ActionResult) else ActionResult(str(out))
         return Resolution(executed=True, message=result.content, result=result)
 

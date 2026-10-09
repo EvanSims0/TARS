@@ -234,3 +234,41 @@ async def test_no_says_cancelled(make_agent, spoken):
     spoken.out.clear()
     await agent.handle("no", spoken)
     assert said(spoken) == "Okay, cancelled. Nothing was sent."
+
+
+async def test_context_line_gives_the_utc_offset(make_agent, spoken):
+    backend = FakeBackend(reply(text("Ten.")))
+    await make_agent(backend).handle("what time is it", spoken)
+    line = backend.requests[0]["messages"][0]["content"][0]["text"]
+    assert "(America/New_York, UTC-04:00)" in line
+
+
+async def test_failed_send_after_yes_is_said_not_raised(make_agent, spoken, registry):
+    from tars.actions import ToolError
+
+    async def broken(args):
+        raise ToolError("Google isn't reachable right now.")
+
+    registry.tools["send_email"].handler = broken
+    agent = make_agent(FakeBackend(reply(tool_use("send_email", {"to": ["a@b.c"], "body": "hi"}))))
+    await agent.handle("email a", spoken)
+    spoken.out.clear()
+    result = await agent.handle("yes", spoken)
+    assert said(spoken) == "That didn't go through: Google isn't reachable right now."
+    assert not result.awaiting_confirmation and not agent.gate.has_pending()
+
+
+async def test_failing_read_back_is_a_tool_error(make_agent, spoken, registry, recorder):
+    from tars.actions import ToolError
+
+    def broken(args):
+        raise ToolError("Google isn't reachable right now.")
+
+    registry.tools["send_email"].read_back = broken
+    backend = FakeBackend(reply(tool_use("send_email", {"to": ["a@b.c"], "body": "hi"})),
+                          reply(text("I can't reach Gmail right now.")))
+    agent = make_agent(backend)
+    await agent.handle("email a", spoken)
+    assert recorder.calls == [] and not agent.gate.has_pending()
+    result = backend.requests[1]["messages"][-1]["content"][0]
+    assert result["is_error"] and "reachable" in result["content"]

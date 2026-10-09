@@ -177,6 +177,9 @@ def build_tools(client: TodoistClient, config: TodoistConfig) -> list[Tool]:
                 await client.update_task(args["task_id"], due_datetime=old_due)
             elif old_due:
                 await client.update_task(args["task_id"], due_date=old_due)
+            else:
+                await client.update_task(args["task_id"], due_string="no date")
+                return "Took the date off again."
             return "Put the old date back."
 
         return ActionResult(f"Rescheduled '{task.get('content', before.get('content'))}' to {args['due']}.",

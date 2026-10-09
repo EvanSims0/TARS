@@ -48,6 +48,8 @@ class Vault:
         if any(_STAMP.sub("", line[2:]).lower() == fact.lower() for line in lines if line.startswith("- ")):
             return "Already noted."
         entry = f"- {fact} ({date.today().isoformat()})"
+        if f"## {heading}" not in lines:  # the heading was removed by hand in Obsidian
+            lines += ["", f"## {heading}"]
         idx = lines.index(f"## {heading}")
         insert_at = idx + 1
         while insert_at < len(lines) and not lines[insert_at].startswith("## "):
@@ -64,8 +66,9 @@ class Vault:
         """Remove facts matching ``query``; with no query, the last fact added this session."""
         lines = self._lines()
         if query:
-            q = query.lower().strip()
-            removed = [line for line in lines if line.startswith("- ") and q in line.lower()]
+            # Whole words only, so "forget Al" can't also wipe every fact mentioning "always".
+            pattern = re.compile(rf"(?<!\w){re.escape(query.strip())}(?!\w)", re.I)
+            removed = [line for line in lines if line.startswith("- ") and pattern.search(line[2:])]
         else:
             removed = [self._added[-1]] if self._added and self._added[-1] in lines else []
         if removed:
