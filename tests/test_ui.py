@@ -320,3 +320,13 @@ async def test_mission_card_rows_come_from_real_data():
     assert rows["INBOX"] == ("2 unread", "HOLD")
     assert rows["SPEND"] == ("$6.20 of $25 this month", "GO")
     assert rows["DENTIST"][0].endswith("Ferry Building")
+
+
+def test_actions_logged_in_the_same_clock_tick_stay_newest_first(tmp_path, monkeypatch):
+    import tars.actionlog
+
+    monkeypatch.setattr(tars.actionlog.time, "time", lambda: 1000.0)  # Windows' clock ticks every ~15 ms
+    log = ActionLog(tmp_path)
+    log.record("first", "S", "one", "done")
+    log.record("second", "S", "two", "done")
+    assert [r["tool"] for r in log.recent()] == ["second", "first"]

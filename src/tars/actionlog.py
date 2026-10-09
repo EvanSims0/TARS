@@ -46,7 +46,9 @@ class ActionLog:
         """Newest first, with an `undone` flag folded in."""
         now = now or datetime.now()
         rows, undone = [], set()
-        for back in range(days or self.keep_days):
+        # Oldest day first, so file order is write order; ties on the clock (Windows ticks every
+        # ~15 ms) keep that order instead of looking simultaneous.
+        for back in reversed(range(days or self.keep_days)):
             path = self._file(now - timedelta(days=back))
             if not path.exists():
                 continue
@@ -57,10 +59,12 @@ class ActionLog:
                 if "undone" in item:
                     undone.add(item["undone"])
                 else:
+                    item["_seq"] = len(rows)
                     rows.append(item)
         for row in rows:
             row["undone"] = row["id"] in undone
-        return sorted(rows, key=lambda r: r["ts"], reverse=True)
+        rows.sort(key=lambda r: (r["ts"], r.pop("_seq")), reverse=True)
+        return rows
 
     def purge(self, now: datetime | None = None) -> None:
         if not self.dir.exists():

@@ -48,7 +48,7 @@ class Transcripts:
         """Each thing said to TARS with its reply, newest first, for the History window."""
         now = now or datetime.now()
         out: list[dict] = []
-        for back in range(days or self.keep_days):
+        for back in reversed(range(days or self.keep_days)):  # write order breaks clock ties
             path = self._file(now - timedelta(days=back))
             if not path.exists():
                 continue
@@ -60,7 +60,8 @@ class Transcripts:
                     out.append(current)
                 elif current is not None:
                     current["tars"] = (current["tars"] + " " + row["text"]).strip()
-        return sorted(out, key=lambda e: e["ts"], reverse=True)
+        order = {id(e): i for i, e in enumerate(out)}
+        return sorted(out, key=lambda e: (e["ts"], order[id(e)]), reverse=True)
 
     def forget_exchange(self, ts: float) -> bool:
         """Remove one exchange (the user line with this timestamp and its replies)."""
