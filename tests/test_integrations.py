@@ -133,8 +133,9 @@ async def test_weather_and_leave_by():
     tools = by_name(places.build_tools(p))
     weather = await tools["get_weather"].handler({})
     assert "partly cloudy" in weather and "70% chance of rain" in weather
-    leave = await tools["leave_by_time"].handler({"destination": "Dentist", "arrive_by": "2099-10-08T15:00:00-04:00"})
-    assert "about 25 minutes" in leave and "2099-10-08T14:25-04:00" in leave
+    res = await tools["leave_by_time"].handler({"destination": "Dentist", "arrive_by": "2099-10-08T15:00:00-04:00"})
+    assert "about 25 minutes" in res.content and "2099-10-08T14:25-04:00" in res.content
+    assert res.card == {"kind": "address", "text": "Dentist", "note": "Leave by 2:25 · about 25 min with traffic"}
     assert json.loads(route.calls[0].request.content)["routingPreference"] == "TRAFFIC_AWARE"
 
 

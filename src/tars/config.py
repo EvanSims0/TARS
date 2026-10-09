@@ -52,6 +52,7 @@ class VoiceConfig:
     input_device_index: int | None = None
     output_device_index: int | None = None
     sample_rate: int = 16000
+    live_transcript: bool = True  # show your words on the overlay as you speak
 
 
 @dataclass

@@ -139,7 +139,9 @@ def build_tools(gmail: Gmail) -> list[Tool]:
             f"{_header(m, 'Date')}\n  {clean_text(m.get('snippet', ''))}"
             for m in msgs
         ]
-        return ActionResult(wrap_untrusted("gmail", "\n".join(rows)), untrusted=True)
+        card = {"kind": "list", "title": f"EMAIL · {len(msgs)}",
+                "rows": [[_header(m, "From").split("<")[0].strip().strip('"')[:18], _header(m, "Subject")] for m in msgs]}
+        return ActionResult(wrap_untrusted("gmail", "\n".join(rows)), untrusted=True, card=card)
 
     async def read_mail(args: dict[str, Any]) -> ActionResult:
         msg = await gmail.get(args["message_id"])

@@ -19,7 +19,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from loguru import logger
 
-from .actions import ActionResult, Channel, ToolError, ToolRegistry
+from .actionlog import ActionLog
+from .actions import ActionResult, Channel, Tier, ToolError, ToolRegistry
 from .config import BrainConfig
 from .gate import ConfirmationGate
 from .local_tools import UndoStack
@@ -28,6 +29,7 @@ from .persona import SYSTEM_PROMPT
 from .personality import Personality
 from .spend import SpendLedger, SpendState, TurnLog
 from .transcripts import Transcripts
+from .ui.live import JOKE_MARK, LiveState
 
 OnText = Callable[[str], Awaitable[None]]
 
@@ -132,6 +134,8 @@ class Agent:
         instructions: str = "",
         personality: Personality | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now().astimezone(),
+        live: LiveState | None = None,
+        actions: ActionLog | None = None,
     ):
         self.backend = backend
         self.registry = registry
@@ -148,6 +152,8 @@ class Agent:
         self.instructions = instructions
         self.personality = personality or Personality()
         self.clock = clock
+        self.live = live
+        self.actions = actions
         self.messages: list[dict[str, Any]] = []
         self._producers: list[str | None] = []  # which model wrote each message
         self.tainted = False
@@ -242,16 +248,24 @@ class Agent:
         self._turn_spoke = False
 
         async def say(chunk: str) -> None:
+            if JOKE_MARK in chunk:
+                chunk = chunk.replace(JOKE_MARK + " ", "").replace(JOKE_MARK, "")
+                if self.live:
+                    self.live.joked()
             if result.first_text_ms is None and chunk.strip():
                 result.first_text_ms = round((time.monotonic() - start) * 1000)
             self._turn_spoke = self._turn_spoke or bool(chunk.strip())
             spoken.append(chunk)
+            if self.live:
+                self.live.reply(chunk)
             await on_text(chunk)
 
         if time.time() - self._last_turn > CONVERSATION_IDLE_SECONDS and not self.gate.has_pending():
             self.reset()
         self._last_turn = time.time()
         self.transcripts.append("user", text, channel.value)
+        if self.live:
+            self.live.turn_started(text, brief=text.startswith("[Scheduled]"))
 
         try:
             await self._turn(text, channel, say, result)
@@ -260,6 +274,8 @@ class Agent:
             self._repair_history()
             raise
         finally:
+            if self.live:
+                self._settle_live()
             result.text = "".join(spoken).strip()
             self.transcripts.append("assistant", result.text, channel.value)
             self.turn_log.record(
@@ -279,7 +295,9 @@ class Agent:
             res = await self.gate.resolve(text, channel)
             if not res.passthrough:
                 if res.result is not None:
-                    self._remember_undo(res.result.undo_label, res.result)
+                    undo_id = self._remember_undo(res.result.undo_label, res.result)
+                    tool = self.registry.get(res.tool_name)
+                    self._log_action(res.tool_name, tool.service if tool else "", res.result, "you said yes", undo_id)
                 self._append("user", [{"type": "text", "text": text}])
                 self._append("assistant", [{"type": "text", "text": res.message}])
                 await say(res.message)
@@ -403,11 +421,15 @@ class Agent:
                 self._remember_undo(tool.name, decision.parked_result)
             return self._tool_result(block.id, content), ""
 
+        if tool.cue and self.live:
+            self.live.cue_said(tool.cue)
         if tool.cue and not self._turn_spoke:
             await say(tool.cue + " ")
         try:
             out = await tool.handler(args)
         except ToolError as e:
+            if self.live and tool.service:
+                self.live.failed(tool.service, str(e))
             return self._tool_result(block.id, f"{tool.service or tool.name}: {e}", True), ""
         except Exception as e:  # report, don't crash the conversation
             logger.exception(f"{tool.name} failed")
@@ -415,9 +437,25 @@ class Agent:
         res = out if isinstance(out, ActionResult) else ActionResult(str(out))
         if res.untrusted:
             self.tainted = True
-        self._remember_undo(tool.name, res)
+        if res.card and self.live:
+            self.live.show_card(res.card)
+        undo_id = self._remember_undo(tool.name, res)
+        if tool.name != "undo" and tool.effective_tier(args) is not Tier.READ:
+            self._log_action(tool.name, tool.service, res, "done", undo_id)
         return self._tool_result(block.id, res.content), ""
 
-    def _remember_undo(self, name: str, res: ActionResult) -> None:
+    def _remember_undo(self, name: str, res: ActionResult) -> str | None:
         if res.undo is not None:
-            self.undo.push(res.undo_label or name, res.undo)
+            return self.undo.push(res.undo_label or name, res.undo)
+        return None
+
+    def _log_action(self, name: str, service: str, res: ActionResult, how: str, undo_id: str | None) -> None:
+        if self.actions is not None:
+            self.actions.record(name, service or "TARS", res.content, how, undo_id, reversible=undo_id is not None)
+
+    def _settle_live(self) -> None:
+        """After a turn: show a held action's card, or go back to idle if nothing else will."""
+        if self.gate.has_pending():
+            self.live.held(self.gate.confirm_card(self.tainted))
+        elif self.live.snapshot()["state"] in ("thinking", "confirm"):
+            self.live.set_state("idle")

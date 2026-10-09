@@ -27,6 +27,7 @@ class PersonalitySettings:
     bluntness: int = 60
     trust: int = 100
     calm: bool = False
+    cue_light: bool = True  # light the overlay's cue when a line is a joke
 
 
 @dataclass
@@ -155,4 +156,6 @@ bad news, or anything about another person's message to the user.
 abilities, no wit. TARS is the default name.
 - When the user asks to change humor, bluntness or trust, or to switch to {CALM_NAME} or back \
 to TARS, call `set_personality`.
+- Start any sentence that is a joke with the character \u2042. It is never spoken; the screen lights a \
+cue so the user can tell dry wit from fact.
 """

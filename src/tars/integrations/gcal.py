@@ -105,6 +105,26 @@ class Calendar:
         return body["calendars"]["primary"].get("busy", [])
 
 
+def _clock(value: str) -> str:
+    """'2026-10-09T14:45:00-07:00' -> '2:45'; all-day events say 'all day'."""
+    if len(value) <= 10:
+        return "all day"
+    hour, minute = int(value[11:13]), value[14:16]
+    return f"{hour % 12 or 12}:{minute}"
+
+
+def events_card(items: list[dict[str, Any]], start: datetime, end: datetime) -> dict[str, Any]:
+    label = "TODAY" if (end - start) <= timedelta(days=1) and start.date() == datetime.now(start.tzinfo).date() \
+        else f"{start:%a %d %b}".upper()
+    rows = []
+    for ev in items:
+        title = ev.get("summary", "(no title)")
+        if ev.get("location"):
+            title += f" · {ev['location'].split(',')[0]}"
+        rows.append([_clock(_when(ev, "start")), title])
+    return {"kind": "list", "title": f"{label} · {len(items)} ITEM{'S' * (len(items) != 1)}", "rows": rows}
+
+
 def free_slots(busy: list[dict[str, str]], start: datetime, end: datetime, minutes: int) -> list[tuple[datetime, datetime]]:
     slots, cursor = [], start
     for block in sorted(busy, key=lambda b: b["start"]):
@@ -156,13 +176,14 @@ def build_tools(cal: Calendar) -> list[Tool]:
             end = instant((date.fromisoformat(args["end"]) + timedelta(days=1)).isoformat(), cal.tz)
         return start, end
 
-    async def list_events(args: dict[str, Any]) -> str:
+    async def list_events(args: dict[str, Any]) -> ActionResult:
         start, end = window(args)
         items = await cal.events(start.isoformat(), end.isoformat(), args.get("query"))
         if not items:
-            return "Nothing on the calendar then."
+            return ActionResult("Nothing on the calendar then.")
         # Titles and places in other people's invites are outside text, like email.
-        return wrap_untrusted("calendar", "\n".join(_describe(e) for e in items))
+        text = wrap_untrusted("calendar", "\n".join(_describe(e) for e in items))
+        return ActionResult(text, card=events_card(items, start, end))
 
     async def find_free_time(args: dict[str, Any]) -> str:
         start, end = window(args)

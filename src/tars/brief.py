@@ -10,6 +10,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import date, datetime, time
 from pathlib import Path
+from typing import Any
 
 from .config import AlertConfig, BriefConfig
 
@@ -76,3 +77,62 @@ class BriefScheduler:
         while True:
             await self.tick()
             await asyncio.sleep(every_seconds)
+
+
+async def mission_card(app: Any, now: datetime | None = None) -> dict[str, Any]:
+    """The overlay's pre-launch checklist: one GO/HOLD row per system, from real data.
+
+    Every row is optional; a service that isn't connected or doesn't answer is left out.
+    """
+    now = now or datetime.now().astimezone()
+    rows: list[dict[str, str]] = []
+
+    async def tool(name: str, args: dict[str, Any]) -> str | None:
+        found = app.agent.registry.get(name)
+        if found is None:
+            return None
+        try:
+            out = await found.handler(args)
+        except Exception:
+            return None
+        return getattr(out, "content", out)
+
+    weather = await tool("get_weather", {})
+    if weather:
+        first = weather.splitlines()[0].split("now: ", 1)[-1].split(" (feels")[0]
+        bad = any(w in first for w in ("rain", "snow", "thunder", "showers", "freezing"))
+        rows.append({"label": "WEATHER", "text": first[:1].upper() + first[1:], "status": "HOLD" if bad else "GO"})
+
+    lead = ""
+    if app.mood.events is not None:
+        try:
+            end = now.replace(hour=23, minute=59, second=0, microsecond=0)
+            events = await app.mood.events(now.replace(hour=0, minute=0, second=0, microsecond=0), end)
+        except Exception:
+            events = None
+        if events is not None:
+            timed = [e for e in events if e.get("start", {}).get("dateTime")]
+            starts = [datetime.fromisoformat(e["start"]["dateTime"].replace("Z", "+00:00")) for e in timed]
+            first_at = f", first at {starts[0].hour % 12 or 12}:{starts[0]:%M}" if starts else ""
+            rows.append({"label": "CALENDAR", "text": f"{len(events)} item{'s' * (len(events) != 1)}{first_at}",
+                         "status": "GO"})
+            upcoming = [s for s in starts if s > now]
+            if upcoming:
+                lead = f"T−{max(1, round((upcoming[0] - now).total_seconds() / 60))} min to first meeting"
+            placed = [(s, e) for s, e in zip(starts, timed) if e.get("location") and s > now]
+            if placed:
+                s, e = placed[0]
+                rows.append({"label": e.get("summary", "NEXT")[:10].upper(),
+                             "text": f"{s.hour % 12 or 12}:{s:%M} · {e['location'].split(',')[0]}", "status": "GO"})
+
+    inbox = await tool("list_email", {"query": "is:unread in:inbox", "limit": 25})
+    if inbox is not None:
+        unread = inbox.count("[id ")
+        rows.append({"label": "INBOX", "text": f"{unread}{'+' if unread == 25 else ''} unread" if unread else "Clear",
+                     "status": "HOLD" if unread else "GO"})
+
+    spend, cap = app.ledger.month_total(), app.config.spend.monthly_cap_usd
+    rows.append({"label": "SPEND", "text": f"${spend:.2f} of ${cap:.0f} this month",
+                 "status": "HOLD" if spend >= cap * app.config.spend.escalation_cutoff else "GO"})
+    return {"kind": "brief", "title": f"MISSION BRIEF · {now:%a} {now.day} {now:%b}".upper(),
+            "lead": lead or "No meetings ahead today", "rows": rows}

@@ -15,6 +15,7 @@ from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
     BotStoppedSpeakingFrame,
     Frame,
+    InterimTranscriptionFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
@@ -69,6 +70,9 @@ class TarsBrain(FrameProcessor):
             self.on_state("listening")
             if self.busy:
                 await self.interrupt()
+        elif isinstance(frame, InterimTranscriptionFrame) and frame.text.strip():
+            if self.agent.live is not None:
+                self.agent.live.user_partial(frame.text.strip())
         elif isinstance(frame, TranscriptionFrame) and frame.text.strip():
             await self._on_user_turn(frame.text)
             return
@@ -123,6 +127,8 @@ class TarsBrain(FrameProcessor):
             logger.info(f"TARS: {result.text}  [{result.first_text_ms} ms, ${result.usd:.4f}]")
         except Exception as e:
             logger.exception("turn failed")
+            if self.agent.live is not None:
+                self.agent.live.failed("Claude", type(e).__name__)
             await speak(_plain_failure(e))
         await speak(chunker.flush())
         await self.push_frame(LLMFullResponseEndFrame())
@@ -135,6 +141,10 @@ class TarsBrain(FrameProcessor):
     async def set_voice(self, settings) -> None:
         """Switch the TTS voice (Vela, the calm mode, can have its own)."""
         await self.push_frame(TTSUpdateSettingsFrame(delta=settings))
+
+    async def typed(self, text: str) -> None:
+        """A turn from the overlay's buttons ("yes", "no"), handled like a spoken one."""
+        await self._on_user_turn(text)
 
     async def start_turn(self, text: str) -> None:
         """Begin a turn TARS starts itself, such as the morning brief."""

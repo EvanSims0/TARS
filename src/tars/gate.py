@@ -60,6 +60,7 @@ class PendingAction:
     tainted: bool
     pc_only: bool = True
     affects_others: bool = True
+    from_phone: bool = False  # a parked draft brought back for review; "no" parks it again
     created: float = field(default_factory=time.time)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
 
@@ -78,6 +79,7 @@ class Resolution:
     executed: bool
     message: str
     result: ActionResult | None = None
+    tool_name: str = ""
     # The reply was neither yes nor no; it should go on to the model as a new request.
     passthrough: bool = False
 
@@ -153,10 +155,15 @@ class ConfirmationGate:
         verdict = classify_reply(reply)
         if verdict == "no":
             self.pending = None
+            if pending.from_phone:
+                self._park(pending)
+                return Resolution(executed=False, message="Okay. It's still saved as a draft.")
             message = "Okay, cancelled. Nothing was sent." if pending.affects_others else "Okay, cancelled."
             return Resolution(executed=False, message=message)
         if verdict == "other":
             self.pending = None
+            if pending.from_phone:
+                self._park(pending)
             return Resolution(executed=False, message="", passthrough=True)
         if pending.pc_only and channel is not Channel.PC:
             return Resolution(executed=False, message="That needs a yes at the PC.")
@@ -171,7 +178,45 @@ class ConfirmationGate:
             logger.exception(f"{pending.tool_name} failed after confirmation")
             return Resolution(executed=False, message="That didn't go through because of an error on my side.")
         result = out if isinstance(out, ActionResult) else ActionResult(str(out))
-        return Resolution(executed=True, message=result.content, result=result)
+        return Resolution(executed=True, message=result.content, result=result, tool_name=pending.tool_name)
+
+    def confirm_card(self, tainted: bool = False) -> dict[str, Any] | None:
+        """What the overlay shows for the held action: built from its real inputs, like the spoken read-back."""
+        if not self.has_pending():
+            return None
+        p = self.pending
+        assert p is not None
+        to = p.args.get("to") or p.args.get("guests") or []
+        titles = {
+            "send_email": f"Email to {', '.join(to)}" if to else "Email",
+            "send_invite": f"Invite to {', '.join(to)}" if to else "Calendar invite",
+            "update_shared_event": "Move a shared event",
+            "set_personality": "Raise trust",
+        }
+        body = p.args.get("body") or p.read_back
+        return {
+            "title": titles.get(p.tool_name, p.tool_name.replace("_", " ").capitalize()),
+            "body": body,
+            "quoted": "body" in p.args,
+            "read_back": p.read_back,
+            "affects_others": p.affects_others,
+            "question": "Send exactly this?" if p.tool_name.startswith("send") else "Go ahead?",
+            "yes_label": "Yes, send" if p.tool_name.startswith("send") else "Yes",
+            "tainted": p.tainted and p.affects_others,
+            "expires_at": p.created + self.PENDING_TTL_SECONDS,
+        }
+
+    def review_parked(self, index: int, tool: Tool) -> PendingAction:
+        """Bring a draft saved from the phone back for a read-back and a yes at the PC."""
+        items = self.parked()
+        if not 0 <= index < len(items):
+            raise IndexError("no such draft")
+        item = items.pop(index)
+        self._save_parked(items)
+        self._tools[tool.name] = tool
+        self.pending = PendingAction(item["tool_name"], item["args"], item["read_back"], item.get("tainted", False),
+                                     pc_only=True, affects_others=True, from_phone=True)
+        return self.pending
 
     # Parked actions (from the phone) wait on disk until the user is at the PC.
 
@@ -180,6 +225,11 @@ class ConfirmationGate:
             return
         items = self.parked()
         items.append(asdict(action))
+        self._save_parked(items)
+
+    def _save_parked(self, items: list[dict[str, Any]]) -> None:
+        if self._parked_path is None:
+            return
         self._parked_path.parent.mkdir(parents=True, exist_ok=True)
         self._parked_path.write_text(json.dumps(items, indent=2), encoding="utf-8")
 

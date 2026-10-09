@@ -77,11 +77,13 @@ class MicController:
         follow_up_seconds: float,
         on_state: Callable[[str], None],
         on_audio_seconds: Callable[[float], None],
+        on_window: Callable[[float], None] = lambda closes_at: None,
     ):
         self.mic = mic
         self.follow_up = follow_up_seconds
         self.on_state = on_state
         self.on_audio_seconds = on_audio_seconds
+        self.on_window = on_window  # when the follow-up window closes, for the overlay's countdown
         self.muted = False
         self._close_handle: asyncio.TimerHandle | None = None
         self._opened_at = 0.0
@@ -100,13 +102,17 @@ class MicController:
 
     def user_speaking(self) -> None:
         self._cancel_close()
+        self.on_window(0.0)
 
     def close_after_quiet(self) -> None:
         self._cancel_close()
         self._close_handle = asyncio.get_running_loop().call_later(self.follow_up, self.close)
+        if self.mic.is_open:
+            self.on_window(time.time() + self.follow_up)
 
     def close(self) -> None:
         self._cancel_close()
+        self.on_window(0.0)
         if self.mic.is_open:
             self.mic.close_mic()
             self.on_audio_seconds(time.monotonic() - self._opened_at)

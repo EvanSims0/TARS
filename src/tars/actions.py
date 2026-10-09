@@ -51,6 +51,9 @@ class ActionResult:
     untrusted: bool = False
     undo: Callable[[], Awaitable[str]] | None = None
     undo_label: str = ""
+    # Something worth showing on screen: {"kind": "list", "title", "rows": [[left, right]], "more"}
+    # or {"kind": "address", "text", "note"}. Addresses and lists are easier to read than hear.
+    card: dict[str, Any] | None = None
 
 
 Handler = Callable[[dict[str, Any]], Awaitable[ActionResult | str]]

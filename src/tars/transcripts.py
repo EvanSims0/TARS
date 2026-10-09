@@ -44,6 +44,47 @@ class Transcripts:
         path.write_text("".join(json.dumps(r) + "\n" for r in kept), encoding="utf-8")
         return len(rows) - len(kept)
 
+    def exchanges(self, days: int | None = None, now: datetime | None = None) -> list[dict]:
+        """Each thing said to TARS with its reply, newest first, for the History window."""
+        now = now or datetime.now()
+        out: list[dict] = []
+        for back in range(days or self.keep_days):
+            path = self._file(now - timedelta(days=back))
+            if not path.exists():
+                continue
+            rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+            current = None
+            for row in rows:
+                if row["role"] == "user":
+                    current = {"ts": row["ts"], "you": row["text"], "tars": "", "channel": row.get("channel", "pc")}
+                    out.append(current)
+                elif current is not None:
+                    current["tars"] = (current["tars"] + " " + row["text"]).strip()
+        return sorted(out, key=lambda e: e["ts"], reverse=True)
+
+    def forget_exchange(self, ts: float) -> bool:
+        """Remove one exchange (the user line with this timestamp and its replies)."""
+        if not self.dir.exists():
+            return False
+        for path in self.dir.glob("*.jsonl"):
+            rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+            start = next((i for i, r in enumerate(rows) if r["role"] == "user" and abs(r["ts"] - ts) < 1e-6), None)
+            if start is None:
+                continue
+            end = next((i for i in range(start + 1, len(rows)) if rows[i]["role"] == "user"), len(rows))
+            kept = rows[:start] + rows[end:]
+            path.write_text("".join(json.dumps(r) + "\n" for r in kept), encoding="utf-8")
+            return True
+        return False
+
+    def clear(self) -> int:
+        if not self.dir.exists():
+            return 0
+        files = list(self.dir.glob("*.jsonl"))
+        for path in files:
+            path.unlink()
+        return len(files)
+
     def purge(self, now: datetime | None = None) -> int:
         if not self.dir.exists():
             return 0

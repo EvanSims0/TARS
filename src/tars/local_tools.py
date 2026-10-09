@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,22 +22,39 @@ class UndoEntry:
     label: str
     undo: Callable[[], Awaitable[str]]
     at: float = field(default_factory=time.time)
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:10])
 
 
 class UndoStack:
     def __init__(self, limit: int = 20):
         self.entries: list[UndoEntry] = []
         self.limit = limit
+        self.on_undone: Callable[[str], None] | None = None
 
-    def push(self, label: str, undo: Callable[[], Awaitable[str]]) -> None:
-        self.entries.append(UndoEntry(label, undo))
+    def push(self, label: str, undo: Callable[[], Awaitable[str]]) -> str:
+        entry = UndoEntry(label, undo)
+        self.entries.append(entry)
         del self.entries[: -self.limit]
+        return entry.id
 
-    async def pop(self) -> str:
+    def has(self, entry_id: str) -> bool:
+        return any(e.id == entry_id for e in self.entries)
+
+    async def pop(self, entry_id: str | None = None) -> str:
+        """Undo the latest action, or a specific one (the History window's Undo buttons)."""
         if not self.entries:
             raise ToolError("There's nothing to undo.")
-        entry = self.entries.pop()
-        return await entry.undo()
+        if entry_id is None:
+            entry = self.entries.pop()
+        else:
+            entry = next((e for e in self.entries if e.id == entry_id), None)
+            if entry is None:
+                raise ToolError("That can't be undone any more.")
+            self.entries.remove(entry)
+        message = await entry.undo()
+        if self.on_undone is not None:
+            self.on_undone(entry.id)
+        return message
 
 
 class Timers:
