@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
-import respx
 from conftest import FakeBackend, reply, text, tool_use
 
 from tars.actions import ActionResult, Channel, Tier, Tool, schema
 from tars.gate import ConfirmationGate
-from tars.integrations import todoist
 from tars.integrations.gcal import meeting_tally
 from tars.local_tools import personality_tool
 from tars.mood import MoodMonitor, back_to_back, presenting_event
@@ -154,36 +152,6 @@ def test_meeting_tally_projects_recurring_cost():
     out = meeting_tally(events, start, end)
     assert out.startswith("2 meetings, 1.5 hours over 7 days")
     assert "Recurring 'Weekly status sync': 1.0 h in this window (1x), about 52 hours a year." in out
-
-
-# The black hole
-
-def test_postpone_tracker_counts_pushes_and_overdue(tmp_path):
-    tracker = todoist.PostponeTracker(tmp_path / "pp.json", threshold=3, overdue_days=14)
-    task = {"id": "1", "content": "Fix the gutter"}
-    for day in (1, 3, 5):
-        assert tracker.observe([{**task, "due": {"date": f"2026-10-0{day}"}}], today=date(2026, 10, 1)) == []
-    flagged = tracker.observe([{**task, "due": {"date": "2026-10-09"}}], today=date(2026, 10, 1))
-    assert flagged[0]["postponed"] == 3
-    old = {"id": "2", "content": "Call the bank", "due": {"date": "2026-09-01"}}
-    assert tracker.observe([old], today=date(2026, 10, 1))[0]["overdue_days"] == 30
-    import json
-    assert list(json.loads((tmp_path / "pp.json").read_text())) == ["2"]  # finished tasks drop out
-
-
-@respx.mock
-async def test_black_hole_labels_flagged_tasks(tmp_path):
-    T = todoist.BASE_URL
-    respx.get(f"{T}/tasks").respond(json={"results": [
-        {"id": "2", "content": "Call the bank", "due": {"date": "2026-01-01"}, "labels": ["admin"]}],
-        "next_cursor": None})
-    update = respx.post(f"{T}/tasks/2").respond(json={"id": "2"})
-    tracker = todoist.PostponeTracker(tmp_path / "pp.json")
-    tools = {t.name: t for t in todoist.build_tools(todoist.TodoistClient("tok"), todoist.TodoistConfig(), tracker)}
-    out = await tools["black_hole"].handler({})
-    assert "Call the bank [id 2]" in out and "overdue" in out
-    import json
-    assert json.loads(update.calls[0].request.content) == {"labels": ["admin", "black-hole"]}
 
 
 def test_mission_brief_in_instructions():

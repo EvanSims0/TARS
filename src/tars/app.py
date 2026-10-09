@@ -74,10 +74,8 @@ def build_app(
         from .integrations import todoist
 
         client = todoist.TodoistClient(token, http)
-        tracker = todoist.PostponeTracker(data / "postponed.json")
-        registry.add(*todoist.build_tools(client, config.todoist, tracker))
+        registry.add(*todoist.build_tools(client, config.todoist))
         mood.open_tasks_due_today = lambda: todoist.open_due_today(client)
-        mood.periodic.append(lambda: todoist.scan_black_hole(client, tracker))
     connected["Todoist"] = bool(token)
 
     from .integrations.google_auth import GoogleSession

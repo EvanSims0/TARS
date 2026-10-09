@@ -6,9 +6,6 @@ which is free; custom reminder times would need Todoist Pro.
 
 from __future__ import annotations
 
-import json
-from datetime import date
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -84,79 +81,17 @@ class TodoistClient:
         return await self._request("POST", "/sections", json={"project_id": project_id, "name": name})
 
 
-BLACK_HOLE_LABEL = "black-hole"
-
-
-def _due_day(task: dict[str, Any]) -> date | None:
-    raw = (task.get("due") or {}).get("date")
-    if not raw:
-        return None
-    return date.fromisoformat(raw[:10])
-
-
-class PostponeTracker:
-    """Notices tasks that keep getting pushed back, so they can go into the black hole.
-
-    Todoist doesn't record postponements, so TARS remembers each open task's due date
-    and counts every time it moves later. Tasks long overdue count as well.
-    """
-
-    def __init__(self, path: Path, threshold: int = 3, overdue_days: int = 14):
-        self.path = path
-        self.threshold = threshold
-        self.overdue_days = overdue_days
-
-    def _load(self) -> dict[str, dict[str, Any]]:
-        if not self.path.exists():
-            return {}
-        return json.loads(self.path.read_text(encoding="utf-8"))
-
-    def _save(self, data: dict[str, dict[str, Any]]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-    def observe(self, tasks: list[dict[str, Any]], today: date | None = None) -> list[dict[str, Any]]:
-        """Update counts from the full list of open tasks; return those past the event horizon."""
-        today = today or date.today()
-        seen = self._load()
-        current: dict[str, dict[str, Any]] = {}
-        flagged = []
-        for task in tasks:
-            due = _due_day(task)
-            if due is None:
-                continue
-            entry = seen.get(task["id"], {"count": 0})
-            if "due" in entry and due > date.fromisoformat(entry["due"]):
-                entry["count"] += 1
-            entry.update(due=due.isoformat(), content=task["content"])
-            current[task["id"]] = entry
-            overdue = (today - due).days
-            if entry["count"] >= self.threshold or overdue >= self.overdue_days:
-                flagged.append({**task, "postponed": entry["count"], "overdue_days": max(overdue, 0)})
-        self._save(current)  # finished or deleted tasks drop out
-        return flagged
-
-
 def _describe(task: dict[str, Any]) -> str:
     due = task.get("due") or {}
     when = due.get("string") or due.get("date") or ""
     return f"{task['content']}" + (f" (due {when})" if when else "") + f" [id {task['id']}]"
 
 
-async def scan_black_hole(client: TodoistClient, tracker: PostponeTracker) -> list[dict[str, Any]]:
-    flagged = tracker.observe(await client.tasks())
-    for task in flagged:
-        labels = task.get("labels") or []
-        if BLACK_HOLE_LABEL not in labels:
-            await client.update_task(task["id"], labels=[*labels, BLACK_HOLE_LABEL])
-    return flagged
-
-
 async def open_due_today(client: TodoistClient) -> int:
     return len(await client.tasks("today"))
 
 
-def build_tools(client: TodoistClient, config: TodoistConfig, tracker: PostponeTracker | None = None) -> list[Tool]:
+def build_tools(client: TodoistClient, config: TodoistConfig) -> list[Tool]:
     async def find_project(name: str, create: bool) -> dict[str, Any]:
         for project in await client.projects():
             if project["name"].lower() == name.lower():
@@ -232,26 +167,10 @@ def build_tools(client: TodoistClient, config: TodoistConfig, tracker: PostponeT
             by_store.setdefault(store, []).append(f"{t['content']} [id {t['id']}]")
         return "\n".join(f"{store}: {', '.join(items)}" for store, items in by_store.items()) or "Nothing for that store."
 
-    async def black_hole(args: dict[str, Any]) -> str:
-        if tracker is None:
-            return "The black hole isn't set up."
-        flagged = await scan_black_hole(client, tracker)
-        if not flagged:
-            return "Nothing past the event horizon. Every task is moving."
-        rows = [
-            f"{t['content']} [id {t['id']}]: postponed {t['postponed']} times"
-            + (f", {t['overdue_days']} days overdue" if t["overdue_days"] else "")
-            for t in flagged
-        ]
-        return (f"{len(flagged)} tasks past the event horizon (labelled {BLACK_HOLE_LABEL} in Todoist):\n"
-                + "\n".join(rows)
-                + "\nOffer to reschedule each with a firm date, or drop it (mark it done; it can be reopened).")
-
     async def reschedule(args: dict[str, Any]) -> ActionResult:
         before = await client.get_task(args["task_id"])
         old_due = (before.get("due") or {}).get("date")
-        labels = [label for label in before.get("labels") or [] if label != BLACK_HOLE_LABEL]
-        task = await client.update_task(args["task_id"], due_string=args["due"], labels=labels)
+        task = await client.update_task(args["task_id"], due_string=args["due"])
 
         async def undo() -> str:
             if old_due and len(old_due) > 10:
@@ -264,11 +183,6 @@ def build_tools(client: TodoistClient, config: TodoistConfig, tracker: PostponeT
                             undo=undo, undo_label="reschedule task")
 
     return [
-        Tool(
-            "black_hole",
-            "Find tasks that keep getting postponed or are long overdue (the black hole), and label them.",
-            schema({}), Tier.READ, black_hole, cue="Checking your list.", service="Todoist",
-        ),
         Tool(
             "reschedule_task",
             "Give a Todoist task a new due date (natural language, e.g. 'Saturday 10am').",
@@ -292,8 +206,7 @@ def build_tools(client: TodoistClient, config: TodoistConfig, tracker: PostponeT
         ),
         Tool(
             "complete_task",
-            "Mark a Todoist task done by its id (find it with list_tasks first). Also how a task is "
-            "dropped: deleting isn't supported, and a done task can be reopened.",
+            "Mark a Todoist task done by its id (find it with list_tasks first).",
             schema({"task_id": {"type": "string"}}, ["task_id"]),
             Tier.CREATE_FOR_YOU, complete_task, service="Todoist",
             read_back=lambda a: "Mark that task done.",
