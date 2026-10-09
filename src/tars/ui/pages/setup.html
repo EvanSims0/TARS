@@ -18,7 +18,10 @@
   .hint { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text-2); }
   .err { font-size: 12px; color: var(--text); }
   .err::before { content: "\26A0  "; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+  .grid3 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.3fr); gap: 14px; }
+  .grid2 > *, .grid3 > * { min-width: 0; }
+  .field .input input { min-width: 0; width: 100%; }
   .field .h3 { font-size: 13px; }
   .field .input { height: 44px; padding: 10px 12px; }
   .field .input:focus-within { padding: 9px 11px; }
@@ -30,7 +33,7 @@
   .checks .c .m { font: 700 10px var(--mono); width: 34px; flex: none; }
   .checks .c .n { width: 130px; flex: none; color: var(--text-2); }
   .footer { display: flex; align-items: center; gap: 12px; padding-top: 8px; }
-  @media (max-width: 640px) { .wrap { padding: 20px 16px; } .grid2 { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .wrap { padding: 20px 16px; } .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); } }
 </style>
 </head>
 <body>
@@ -45,11 +48,13 @@
   document.getElementById("titlebar").replaceWith(TARS.titlebar("Set up TARS"));
   const STEPS = ["You", "Keys", "Google", "Headset", "Start at login", "First run"];
   const KEYS = [
-    ["ANTHROPIC_API_KEY", "Language model", "console.anthropic.com → API keys. Set a monthly limit there too."],
-    ["DEEPGRAM_API_KEY", "Speech-to-text", "console.deepgram.com → API keys."],
-    ["ELEVENLABS_API_KEY", "Voice", "elevenlabs.io → Profile → API keys."],
-    ["TODOIST_API_TOKEN", "Tasks", "todoist.com → Settings → Integrations → Developer → API token."],
+    ["ANTHROPIC_API_KEY", "Language model", "API keys → Create key. Set a monthly limit there too.", "https://console.anthropic.com/settings/keys"],
+    ["DEEPGRAM_API_KEY", "Speech-to-text", "API Keys → Create a New API Key.", "https://console.deepgram.com"],
+    ["ELEVENLABS_API_KEY", "Voice", "Developers → API Keys.", "https://elevenlabs.io/app/settings/api-keys"],
+    ["TODOIST_API_TOKEN", "Tasks", "Settings → Integrations → Developer → API token.", "https://app.todoist.com/app/settings/integrations/developer"],
   ];
+  const MAPS = ["GOOGLE_MAPS_API_KEY", "Traffic (optional)", "Enable the Routes API, then Credentials → Create API key. Needs a billing account.",
+                "https://console.cloud.google.com/apis/library/routes.googleapis.com"];
   let step = 0, state = null, checking = {}, errors = {}, checks = null, pollTimer = 0;
   const verified = () => KEYS.every(([k]) => state.keys[k]);
 
@@ -86,6 +91,22 @@
       catch (e) { coords.textContent = e.message; }
     };
     town.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find(); } });
+    // If the lookup can't find the town, the numbers can be typed in (Google Maps: right-click your home).
+    const lat = el("input", { id: "lat", inputmode: "decimal", value: place.latitude ?? "", placeholder: "40.7128" });
+    const lon = el("input", { id: "lon", inputmode: "decimal", value: place.longitude ?? "", placeholder: "-74.0060" });
+    const tzIn = el("input", { id: "tz", value: place.timezone, placeholder: "America/New_York" });
+    const typed = () => {
+      const a = parseFloat(lat.value), b = parseFloat(lon.value);
+      place = { latitude: Number.isFinite(a) && Math.abs(a) <= 90 ? a : null, longitude: Number.isFinite(b) && Math.abs(b) <= 180 ? b : null,
+                timezone: tzIn.value.trim() || place.timezone };
+      if (place.longitude === null) place.latitude = null;
+      paint(); next.update();
+    };
+    [lat, lon, tzIn].forEach((i) => i.addEventListener("input", typed));
+    const manual = el("details", {}, el("summary", { class: "small muted", style: "cursor:pointer" }, "Type the numbers instead"),
+      el("div", { class: "grid3", style: "margin-top:10px" },
+        field("Latitude", lat), field("Longitude", lon), field("Timezone", tzIn)),
+      el("p", { class: "caption" }, "In Google Maps, right-click your home and click the numbers at the top to copy them. The first is latitude."));
     next.validate = () => name.value.trim() && /@/.test(email.value) && place.latitude != null;
     next.save = () => api("/api/settings", { values: {
       user_name: name.value.trim(), user_email: email.value.trim(), "location.home_address": home.value.trim(),
@@ -98,6 +119,7 @@
       el("div", { class: "field" }, el("span", { class: "h3" }, "Town or city, for the weather"),
         el("div", { style: "display:flex;gap:10px" }, el("span", { class: "input", style: "flex:1;height:44px;padding:10px 12px" }, town),
           el("button", { type: "button", class: "btn", onclick: async () => { await find(); next.update(); } }, "Find", key("Enter"))), coords),
+      manual,
     ];
   }
 
@@ -105,7 +127,7 @@
   function keys(next) {
     const rows = [];
     const firstOpen = KEYS.findIndex(([k]) => !state.keys[k]);
-    KEYS.forEach(([name, label, where], i) => {
+    KEYS.forEach(([name, label, where, link], i) => {
       if (state.keys[name] && i !== firstOpen) {
         rows.push(el("div", { class: "keyrow done" }, icon("check", 18), el("span", { class: "body", style: "font-weight:500" }, `Key ${i + 1} · ${label}`),
           el("span", { class: "grow" }), el("span", { class: "small muted" }, errors[name] ? "Check failed" : "Verified")));
@@ -133,7 +155,8 @@
           el("label", { class: "input", style: "border:2px solid var(--text);padding:11px 13px" }, input, status),
           errors[name] ? el("div", { class: "err" }, errors[name]) : null,
           el("div", { class: "hint" }, icon("lock", 16),
-            el("span", {}, `Find it at ${where} Saved to Windows Credential Manager. After saving it’s never shown again. Not even to you. Especially not to you.`))));
+            el("span", {}, el("a", { href: link, target: "_blank", rel: "noopener" }, "Get the key"), ` · ${where} `,
+              "Keys are shown only once when you create them; if you lost one, make a new one. Saved to Windows Credential Manager. After saving it’s never shown again. Not even to you. Especially not to you."))));
         setTimeout(() => input.focus(), 0);
       } else {
         rows.push(el("div", { class: "keyrow next" }, el("span", {}, `Key ${i + 1} · ${label}`), el("span", { class: "grow" }), el("span", { class: "caption" }, "Up next")));
@@ -141,7 +164,35 @@
     });
     next.validate = () => verified() && !Object.keys(errors).length;
     next.hint = "Next unlocks when the check passes";
+    next.skip = true;
+    if (verified()) rows.push(optionalMaps());
     return [title("Add your keys", "One at a time. Each key gets a live check, the same one tars check runs."), ...rows];
+  }
+
+  function optionalMaps() {
+    const [name, label, where, link] = MAPS;
+    if (state.keys[name] && !errors[name]) {
+      return el("div", { class: "keyrow done" }, icon("check", 18), el("span", { class: "body", style: "font-weight:500" }, label),
+        el("span", { class: "grow" }), el("span", { class: "small muted" }, "Verified"));
+    }
+    const input = el("input", { type: "password", class: "mono", autocomplete: "off", spellcheck: "false", "aria-label": "Google Maps key",
+      placeholder: "Optional: paste a Google Maps key" });
+    const save = async () => {
+      if (!input.value.trim()) return;
+      try {
+        const r = await api("/api/accounts/key", { name, value: input.value });
+        const bad = r.results.find((x) => x.ok === false);
+        if (bad) errors[name] = bad.detail; else delete errors[name];
+      } catch (e) { errors[name] = e.message; }
+      await refresh(); render();
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); save(); } });
+    return el("div", { class: "active" },
+      el("span", { class: "h3", style: "font-size:13px" }, label),
+      el("label", { class: "input" }, input, el("button", { type: "button", class: "btn btn-sm", onclick: save }, "Save")),
+      errors[name] ? el("div", { class: "err" }, errors[name]) : null,
+      el("div", { class: "hint" }, icon("timer", 16), el("span", {}, el("a", { href: link, target: "_blank", rel: "noopener" }, "Get the key"),
+        ` · ${where} Without it, everything works except leave-by times.`)));
   }
 
   // ---------- 3 · Google ----------
@@ -198,8 +249,23 @@
       const val = (box) => { const v = box.querySelector("select").value; return v === "" ? null : Number(v); };
       return api("/api/settings", { values: { "voice.input_device_index": val(mic), "voice.output_device_index": val(spk) } });
     };
+    const result = el("div", { class: "small muted", "aria-live": "polite" });
+    const meter = el("div", { class: "progress", style: "height:6px" }, el("i", { style: "width:0%" }));
+    const test = el("button", { type: "button", class: "btn", onclick: async () => {
+      const val = (box) => { const v = box.querySelector("select").value; return v === "" ? null : Number(v); };
+      test.setAttribute("disabled", ""); result.textContent = "Playing a tone. Then say something for 3 seconds…";
+      try {
+        const r = await api("/api/devices/test", { input: val(mic), output: val(spk) });
+        meter.firstChild.style.width = `${r.level}%`;
+        result.textContent = r.level >= 8 ? "Heard you. If you heard the tone, the headset is ready."
+          : "That was silence. Check the mic is on, picked above, and allowed in Windows privacy settings.";
+      } catch (e) { result.textContent = e.message; }
+      test.removeAttribute("disabled");
+    } }, "Test the headset", key("T"));
+    shortcut("t", () => test.click());
     return [title("Pick your headset", "Leave both on Windows default if the headset already is. TARS opens the mic only while you talk, so Bluetooth stays in high-quality mode."),
       el("div", { class: "grid2" }, mic, spk),
+      el("div", { style: "display:grid;gap:8px" }, el("div", {}, test), meter, result),
       el("div", { class: "hint" }, icon("dial", 16), el("span", {}, "In Windows Settings → Privacy → Microphone, let desktop apps use the microphone."))];
   }
 
@@ -212,7 +278,7 @@
       el("div", { class: "row", style: "display:flex;align-items:center;gap:16px" },
         el("div", { style: "flex:1" }, el("div", { class: "h3" }, "Start TARS when I sign in"),
           el("div", { class: "small muted" }, "Also schedules the nightly memory backup.")),
-        toggle({ id: "startup", label: "Start TARS when I sign in", checked: false,
+        toggle({ id: "startup", label: "Start TARS when I sign in", checked: state.startup,
           onChange: async (on) => { await api("/api/startup", { enable: on }); toast(on ? "TARS will start when you sign in" : "Start at login is off"); } })),
       el("div", { class: "hint" }, icon("timer", 16), el("span", {}, "For the backup to wake the PC: Power Options → Sleep → Allow wake timers → Enable."))];
   }
@@ -235,7 +301,11 @@
       list,
       checks ? el("button", { type: "button", class: "link", onclick: () => { checks = null; render(); } }, "Run the checks again") : null,
       el("div", { class: "well" }, el("span", { class: "label" }, "Try it"),
-        el("div", { class: "body" }, "Press Ctrl+Alt+Space and say “What’s on today?” The card appears bottom-right while TARS listens and answers."))];
+        el("div", { class: "body" }, "Start TARS, press Ctrl+Alt+Space and say “What’s on today?” The card appears bottom-right while TARS listens and answers."),
+        state.running ? el("div", { class: "small muted" }, "TARS is already running.")
+          : el("div", {}, el("button", { type: "button", class: "btn btn-primary", id: "launch", onclick: async () => {
+              try { await api("/api/launch", {}); toast("Starting TARS. Look for it in the tray."); } catch (e) { toast(e.message); }
+            } }, "Start TARS now", key("S"))))];
   }
 
   const BUILDERS = [you, keys, google, headset, startup, firstRun];
@@ -265,6 +335,7 @@
   shortcut("alt+b", () => go(-1));
   shortcut("Enter", (e) => { if (!e.target.matches("input")) document.getElementById("next")?.click(); });
   shortcut("o", () => document.getElementById("client-file")?.click());
+  shortcut("s", () => document.getElementById("launch")?.click());
 
   (async () => {
     try { await refresh(); } catch (e) { document.getElementById("wrap").replaceChildren(el("p", {}, e.message)); return; }

@@ -34,6 +34,8 @@ html, body { margin: 0; height: 100%; }
 body { background: var(--surface); color: var(--text); font: 14px/1.45 var(--font);
        -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font: inherit; color: inherit; }
+a { color: var(--text); text-underline-offset: 3px; }
+a:hover { text-decoration-thickness: 2px; }
 :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 [hidden] { display: none !important; }
 

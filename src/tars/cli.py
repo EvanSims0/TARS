@@ -209,9 +209,10 @@ def cmd_ui(args, config) -> None:
 
 def cmd_setup(args, config) -> None:
     from .memory import Vault
-    from .ui.server import AppServer, UiContext
+    from .ui.server import AppServer, UiContext, ensure_config
 
     path = args.config or config.home / "config.toml"
+    ensure_config(config, path)  # a fresh install starts from the example, with the TARS voice
     vault = Vault(config.vault)
     vault.ensure()
     server = AppServer(UiContext(config, vault, config_path=path))

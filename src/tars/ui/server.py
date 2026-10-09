@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+import tomllib
 import webbrowser
 from collections.abc import Awaitable, Callable
 from concurrent.futures import Future
@@ -368,6 +369,51 @@ class AppServer:
         finally:
             pa.terminate()
 
+    def test_audio(self, input_index: int | None, output_index: int | None) -> dict[str, Any]:
+        """Play a short tone on the speaker, then listen for 3 seconds and report how loud it was."""
+        import array
+        import math
+
+        try:
+            import pyaudio
+        except ImportError as e:
+            raise ApiError(400, "Audio needs the voice extras.") from e
+        rate, pa = 16000, pyaudio.PyAudio()
+        try:
+            n = rate // 2
+            fade = rate // 50
+            tone = array.array("h", (int(9000 * math.sin(2 * math.pi * 660 * i / rate) * min(1, i / fade, (n - i) / fade))
+                                     for i in range(n)))
+            out = pa.open(format=pyaudio.paInt16, channels=1, rate=rate, output=True, output_device_index=output_index)
+            out.write(tone.tobytes())
+            out.stop_stream()
+            out.close()
+            mic = pa.open(format=pyaudio.paInt16, channels=1, rate=rate, input=True, input_device_index=input_index,
+                          frames_per_buffer=rate // 10)
+            peak = 0
+            for _ in range(30):  # 3 seconds
+                chunk = array.array("h", mic.read(rate // 10, exception_on_overflow=False))
+                peak = max(peak, max((abs(x) for x in chunk), default=0))
+            mic.stop_stream()
+            mic.close()
+        except OSError as e:
+            raise ApiError(400, f"That device didn't open ({e}). Pick another, or check it's connected.") from e
+        finally:
+            pa.terminate()
+        return {"level": min(100, round(peak / 32768 * 100 * 2))}
+
+    def launch(self) -> dict[str, Any]:
+        """Start `tars voice` on its own, so the wizard can finish with TARS running."""
+        if self.ctx.app is not None:
+            return {"started": False, "running": True}
+        flags = 0
+        if sys.platform == "win32":
+            flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        subprocess.Popen([sys.executable, "-m", "tars", "voice"], creationflags=flags,
+                         start_new_session=sys.platform != "win32",
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
+        return {"started": True}
+
     def startup_tasks(self, enable: bool) -> dict[str, Any]:
         if sys.platform != "win32":
             raise ApiError(400, "Start at login is set up on Windows.")
@@ -598,20 +644,37 @@ def _setup_state(srv: AppServer, query: dict[str, list[str]], body: dict[str, An
             "keys": {name: bool(keys.get_secret(name)) for name in SERVICE_KEYS},
             "google": bool(keys.get_secret(keys.GOOGLE_OAUTH_TOKEN)), "google_status": srv.ctx.google_status,
             "voice": {"input": c.voice.input_device_index, "output": c.voice.output_device_index},
-            "windows": sys.platform == "win32", "config_exists": path.exists(), "config_path": str(path)}
+            "windows": sys.platform == "win32", "startup": _startup_enabled(), "running": srv.ctx.app is not None,
+            "config_exists": path.exists(), "config_path": str(path)}
+
+
+def _startup_enabled() -> bool:
+    if sys.platform != "win32":
+        return False
+    done = subprocess.run(["schtasks", "/Query", "/TN", "TARS"], capture_output=True,
+                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return done.returncode == 0
+
+
+def ensure_config(config: Config, path: Path) -> None:
+    """A fresh install has no config.toml yet: start from the example (which carries the TARS voice ID)."""
+    if path.exists():
+        return
+    from ..cli import EXAMPLE_CONFIG
+
+    if not EXAMPLE_CONFIG.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(EXAMPLE_CONFIG.read_text(encoding="utf-8"), encoding="utf-8")
+    with path.open("rb") as f:
+        _merge(config, tomllib.load(f))
 
 
 def _save(srv: AppServer, query: dict[str, list[str]], body: dict[str, Any]) -> Any:
     values = body.get("values")
     if not isinstance(values, dict) or not values:
         raise ApiError(400, "Nothing to save.")
-    path = srv.ctx.config_path or srv.ctx.config.home / "config.toml"
-    if not path.exists():
-        from ..cli import EXAMPLE_CONFIG
-
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if EXAMPLE_CONFIG.exists():
-            path.write_text(EXAMPLE_CONFIG.read_text(encoding="utf-8"), encoding="utf-8")
+    ensure_config(srv.ctx.config, srv.ctx.config_path or srv.ctx.config.home / "config.toml")
     return srv._save_settings(values)
 
 
@@ -637,6 +700,14 @@ def _forget_fact(srv: AppServer, query: dict[str, list[str]], body: dict[str, An
     return {"forgot": fact.text}
 
 
+def _index(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, int) and 0 <= value < 512:
+        return value
+    raise ApiError(400, "Pick a device from the list.")
+
+
 ROUTES: dict[tuple[str, str], Callable[[AppServer, dict[str, list[str]], dict[str, Any]], Any]] = {
     ("GET", "live"): lambda s, q, b: s.live(int((q.get("since") or ["-1"])[0] or -1)),
     ("GET", "status"): lambda s, q, b: s.status(),
@@ -660,6 +731,8 @@ ROUTES: dict[tuple[str, str], Callable[[AppServer, dict[str, list[str]], dict[st
     ("POST", "accounts/google"): _google,
     ("POST", "geocode"): lambda s, q, b: s.geocode(str(b.get("place", ""))[:120]),
     ("POST", "startup"): lambda s, q, b: s.startup_tasks(bool(b.get("enable"))),
+    ("POST", "devices/test"): lambda s, q, b: s.test_audio(_index(b.get("input")), _index(b.get("output"))),
+    ("POST", "launch"): lambda s, q, b: s.launch(),
 }
 
 __all__ = ["AppServer", "UiContext", "ApiError"]

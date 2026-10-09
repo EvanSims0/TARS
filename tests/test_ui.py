@@ -330,3 +330,21 @@ def test_actions_logged_in_the_same_clock_tick_stay_newest_first(tmp_path, monke
     log.record("first", "S", "one", "done")
     log.record("second", "S", "two", "done")
     assert [r["tool"] for r in log.recent()] == ["second", "first"]
+
+
+def test_a_fresh_install_starts_from_the_example_config(tmp_path):
+    from tars.ui.server import ensure_config
+
+    config = Config(home=tmp_path)
+    assert config.voice.tts_voice_id == ""  # nothing yet: the ElevenLabs check would fail
+    ensure_config(config, tmp_path / "config.toml")
+    assert (tmp_path / "config.toml").exists()
+    assert config.voice.tts_voice_id  # the original TARS voice from the example
+
+
+def test_setup_state_and_device_choices_are_checked(running):
+    _, c, _ = running
+    status, state = c.call("GET", "/api/setup")
+    assert status == 200 and state["running"] and state["startup"] is False
+    assert c.call("POST", "/api/devices/test", {"input": "../etc", "output": None})[0] == 400
+    assert c.call("POST", "/api/launch", {})[1] == {"started": False, "running": True}  # never a second TARS
