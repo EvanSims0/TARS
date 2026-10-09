@@ -44,7 +44,20 @@ push-to-talk mic ─► Deepgram Flux ─► TarsBrain ─► ElevenLabs Flash v
 | Memory vault with "noted" / "forget that", 7-day transcripts, nightly backup | Proactive features (Phase 3) |
 | Morning brief at 9am, or as soon as the PC is on after 9 | |
 | Spend cap, per-turn response time and cost log, `tars status` | |
+| `tars check` (read-only test of every account), `tars devices`, daily log file | |
+| CI on Windows and Linux, locked dependencies | |
 | Personality sliders (humor, bluntness, trust), Vela calm mode, discretion and stress dial-down, meeting tally | |
+
+### Passing Gate 1
+
+The code is done and tested offline; what's left happens on the PC.
+
+1. Create the Anthropic key (with a monthly limit in the console) and the Todoist account and token.
+2. Install and fill in `config.toml` ([docs/SETUP.md](docs/SETUP.md)), store the keys with
+   `tars set-key`, and run `tars google-auth`.
+3. Run `tars check` until nothing fails, then `tars probe -n 10`.
+4. Run the 25 phrases in [docs/TEST_SCRIPT.md](docs/TEST_SCRIPT.md). Gate 1 opens when at least 23
+   pass first time, all three safety checks pass, and 9 in 10 replies start within 3 seconds.
 
 ## Personality
 
@@ -65,9 +78,13 @@ gives the time-dilation report.
 ## Development
 
 ```bash
-uv venv && uv pip install -e ".[voice,dev]"   # PortAudio is needed for the mic (bundled on Windows)
-pytest
-tars chat                                      # the same brain and tools, by typing
+uv sync --locked --extra voice --extra dev   # Linux needs portaudio19-dev for the mic; Windows bundles it
+uv run pytest -q
+uv run ruff check src tests
+uv run tars chat                             # the same brain and tools, by typing
 ```
+
+After changing dependencies, run `uv lock` and commit `uv.lock`. CI runs lint and tests on
+Windows and Linux for every push.
 
 Tests use a scripted model backend and mocked HTTP, so they make no API calls and cost nothing.

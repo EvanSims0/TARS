@@ -1,7 +1,7 @@
 # Registers TARS with Task Scheduler for the current user:
 #   - "TARS" runs `tars voice` at logon (needs your audio session, so not a service)
 #   - "TARS vault backup" runs `tars backup` nightly at 3:00, waking the PC if asleep
-# Run from the repo root after `pip install -e ".[voice]"` in .venv.
+# Run from the repo root after installing into .venv (`uv sync --locked --extra voice`).
 
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot

@@ -1,17 +1,22 @@
 # Setting up TARS on your PC
 
-About an hour, once. Everything here is on Windows 11 or 10 with Python 3.11 or newer.
+About an hour, once. Everything here is on Windows 11 or 10 with Python 3.12 (3.11 or newer works).
 
 ## 1. Install
 
+The versions that passed the tests are pinned in `uv.lock`; `uv` installs exactly those.
+
 ```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex"   # once; then open a new window
 git clone https://github.com/EvanSims0/TARS
 cd TARS
-py -m venv .venv
+uv sync --locked --extra voice
 .venv\Scripts\activate
-pip install -e ".[voice,dev]"
 tars init
 ```
+
+Without `uv`, `py -m venv .venv`, `.venv\Scripts\activate` and `pip install -e ".[voice]"` also work,
+but install the newest versions rather than the tested ones.
 
 `tars init` writes `%APPDATA%\TARS\config.toml`. Open it and fill in your name, your Gmail
 address (`user_email`, so "email me" works), home address, latitude, longitude and timezone.
@@ -27,7 +32,7 @@ the value without echoing it. Keys never go in `config.toml` or the repo.
 | Deepgram | console.deepgram.com → API keys | `DEEPGRAM_API_KEY` | TARS opts each session out of the model-improvement program (`mip_opt_out`) |
 | ElevenLabs | elevenlabs.io → Profile → API keys | `ELEVENLABS_API_KEY` | Starter plan. Pick or design an **original** voice (not a clone of an actor), and put its voice ID in `voice.tts_voice_id` |
 | Todoist | todoist.com → Settings → Integrations → Developer | `TODOIST_API_TOKEN` | Create a project named `Shopping` or let TARS create it |
-| Google Maps | console.cloud.google.com → enable *Routes API* → Credentials → API key | `GOOGLE_MAPS_API_KEY` | Restrict the key to the Routes API |
+| Google Maps (optional) | console.cloud.google.com → enable *Routes API* → Credentials → API key | `GOOGLE_MAPS_API_KEY` | Needs a billing account. Without it, leave-by times are off (test 3 fails) and everything else works. Restrict the key to the Routes API |
 | Google (Gmail, Calendar) | see below | (stored by `tars google-auth`) | |
 
 Turn off optional data use where offered (Deepgram model improvement, ElevenLabs history
@@ -47,11 +52,17 @@ retention if you like).
 ## 3. Try it
 
 ```powershell
-tars status          # what's connected
+tars check           # one read-only call to every account; fix anything marked FAIL
+tars devices         # list audio devices, if the headset isn't the Windows default
 tars probe -n 10     # Phase 1 test: Claude Haiku 5.5's real time to first word
 tars chat            # talk by typing, same brain and tools as voice
 tars voice           # push-to-talk: Ctrl+Alt+Space to talk, Ctrl+Alt+M to mute
+tars status          # what's connected, today's response times and spend
 ```
+
+`tars check` creates, changes and sends nothing. Its Claude call costs a fraction of a cent. If
+the headset isn't the Windows default device, put the numbers `tars devices` shows into
+`voice.input_device_index` and `voice.output_device_index` in `config.toml`.
 
 With `tars voice`, press the talk hotkey and speak. The mic stays open for about 8 seconds
 after TARS answers, so follow-ups don't need the hotkey, then closes so the Bluetooth
@@ -77,5 +88,6 @@ This registers two Task Scheduler tasks for your user:
 | Memory vault (open it in Obsidian) | `%APPDATA%\TARS\vault` unless `vault_path` is set |
 | Vault backups | `%APPDATA%\TARS\vault-backups` unless `backup_path` is set |
 | Transcripts (text only, 7 days) | `%APPDATA%\TARS\data\transcripts` |
+| Daily log from `tars voice` (7 days) | `%APPDATA%\TARS\data\logs` |
 | Per-turn timing and spend | `%APPDATA%\TARS\data\turns-*.jsonl`, `spend-*.jsonl` |
 | API keys and tokens | Windows Credential Manager, under "TARS" |
