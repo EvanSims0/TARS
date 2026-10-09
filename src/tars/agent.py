@@ -20,11 +20,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .actions import ActionResult, Channel, ToolError, ToolRegistry
 from .config import BrainConfig
 from .gate import ConfirmationGate
+from .local_tools import UndoStack
 from .memory import Vault
 from .persona import SYSTEM_PROMPT
 from .personality import Personality
 from .spend import SpendLedger, SpendState, TurnLog
-from .local_tools import UndoStack
 from .transcripts import Transcripts
 
 OnText = Callable[[str], Awaitable[None]]

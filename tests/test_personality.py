@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
-from conftest import FakeBackend, reply, text, tool_use
+from conftest import FakeBackend, reply, tool_use
 
 from tars.actions import ActionResult, Channel, Tier, Tool, schema
 from tars.gate import ConfirmationGate
