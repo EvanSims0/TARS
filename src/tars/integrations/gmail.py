@@ -74,12 +74,16 @@ class Gmail:
 
     async def search(self, query: str, limit: int) -> list[dict[str, Any]]:
         listing = await self.s.request("GET", f"{API}/messages", params={"q": query, "maxResults": limit})
-        # Fetched together: one at a time adds a round trip per message to the reply time.
-        return list(await asyncio.gather(*(
-            self.s.request("GET", f"{API}/messages/{ref['id']}",
-                           params={"format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]})
-            for ref in listing.get("messages", [])
-        )))
+        # Fetched a few at a time: one by one adds a round trip per message to the reply time,
+        # and all at once can trip Gmail's per-user concurrency limit.
+        limiter = asyncio.Semaphore(5)
+
+        async def fetch(message_id: str) -> dict[str, Any]:
+            async with limiter:
+                return await self.s.request("GET", f"{API}/messages/{message_id}", params={
+                    "format": "metadata", "metadataHeaders": ["From", "Subject", "Date"]})
+
+        return list(await asyncio.gather(*(fetch(ref["id"]) for ref in listing.get("messages", []))))
 
     async def get(self, message_id: str) -> dict[str, Any]:
         return await self.s.request("GET", f"{API}/messages/{message_id}", params={"format": "full"})

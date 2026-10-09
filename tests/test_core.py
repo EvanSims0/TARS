@@ -181,3 +181,19 @@ def test_remember_survives_a_deleted_heading(tmp_path):
     vault.file.write_text("# TARS memory\n", encoding="utf-8")
     assert vault.remember("Jess's birthday is March 3", "People") == "Noted."
     assert "## People\n- Jess's birthday is March 3" in vault.file.read_text(encoding="utf-8")
+
+
+def test_blank_forget_never_wipes_the_vault(tmp_path):
+    vault = Vault(tmp_path / "v")
+    vault.remember("Jess likes tea", "People")
+    vault.remember("Gym on Mondays", "Routines")
+    assert vault.forget("  ") == ["Gym on Mondays"]  # same as "forget that": only the last fact
+    assert "Jess likes tea" in vault.snapshot()
+
+
+def test_remember_finds_a_heading_edited_by_hand(tmp_path):
+    vault = Vault(tmp_path / "v")
+    vault.ensure()
+    vault.file.write_text("# TARS memory\n\n## people \n", encoding="utf-8")
+    vault.remember("Jess likes tea", "People")
+    assert vault.file.read_text(encoding="utf-8").lower().count("## people") == 1

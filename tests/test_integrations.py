@@ -194,3 +194,12 @@ async def test_shared_event_read_back_uses_the_real_event():
         {"event_id": "e1", "start": "2026-10-09T10:00:00-04:00", "end": "2026-10-09T11:00:00-04:00"})
     assert text == ("Move 'Board review' to 2026-10-09T10:00:00-04:00 until 2026-10-09T11:00:00-04:00 "
                     "and notify sam@x.")
+
+
+@respx.mock
+async def test_same_bare_date_for_start_and_end_means_that_whole_day():
+    route = respx.get(f"{gcal.CAL}/events").respond(json={"items": []})
+    tools = by_name(gcal.build_tools(gcal.Calendar(_session(), "America/New_York")))
+    await tools["list_events"].handler({"start": "2026-10-09", "end": "2026-10-09"})
+    params = route.calls[0].request.url.params
+    assert (params["timeMin"], params["timeMax"]) == ("2026-10-09T00:00:00-04:00", "2026-10-10T00:00:00-04:00")

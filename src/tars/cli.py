@@ -145,7 +145,7 @@ def cmd_devices(args, config) -> None:
     try:
         lines = audio_devices()
     except ImportError:
-        sys.exit('Audio needs the voice extras: pip install -e ".[voice]"')
+        sys.exit("Audio needs the voice extras: uv sync --locked --extra voice")
     print("Index  Kind   Name")
     print("\n".join(lines) or "No audio devices found.")
     print("\nTo pick the headset, set voice.input_device_index and voice.output_device_index in config.toml.")

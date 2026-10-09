@@ -48,9 +48,11 @@ class Vault:
         if any(_STAMP.sub("", line[2:]).lower() == fact.lower() for line in lines if line.startswith("- ")):
             return "Already noted."
         entry = f"- {fact} ({date.today().isoformat()})"
-        if f"## {heading}" not in lines:  # the heading was removed by hand in Obsidian
+        wanted = f"## {heading}".lower()
+        idx = next((i for i, line in enumerate(lines) if line.strip().lower() == wanted), None)
+        if idx is None:  # the heading was removed by hand in Obsidian
             lines += ["", f"## {heading}"]
-        idx = lines.index(f"## {heading}")
+            idx = len(lines) - 1
         insert_at = idx + 1
         while insert_at < len(lines) and not lines[insert_at].startswith("## "):
             insert_at += 1
@@ -65,9 +67,10 @@ class Vault:
     def forget(self, query: str | None = None) -> list[str]:
         """Remove facts matching ``query``; with no query, the last fact added this session."""
         lines = self._lines()
+        query = (query or "").strip()
         if query:
             # Whole words only, so "forget Al" can't also wipe every fact mentioning "always".
-            pattern = re.compile(rf"(?<!\w){re.escape(query.strip())}(?!\w)", re.I)
+            pattern = re.compile(rf"(?<!\w){re.escape(query)}(?!\w)", re.I)
             removed = [line for line in lines if line.startswith("- ") and pattern.search(line[2:])]
         else:
             removed = [self._added[-1]] if self._added and self._added[-1] in lines else []

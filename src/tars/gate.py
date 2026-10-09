@@ -19,6 +19,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 from .actions import ActionResult, Channel, Tier, Tool, ToolError
 
 _YES = {
@@ -166,6 +168,7 @@ class ConfirmationGate:
         except ToolError as e:
             return Resolution(executed=False, message=f"That didn't go through: {e}")
         except Exception:
+            logger.exception(f"{pending.tool_name} failed after confirmation")
             return Resolution(executed=False, message="That didn't go through because of an error on my side.")
         result = out if isinstance(out, ActionResult) else ActionResult(str(out))
         return Resolution(executed=True, message=result.content, result=result)

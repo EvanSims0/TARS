@@ -61,15 +61,17 @@ async def check_claude(config: Config) -> Check:
         return Check("Claude", False, "run `tars set-key ANTHROPIC_API_KEY`")
     import anthropic
 
-    client = anthropic.AsyncAnthropic(api_key=key, max_retries=0, timeout=20)
     model = config.brain.fast_model
     start, first = time.monotonic(), None
     try:
-        async with client.messages.stream(
-            model=model, max_tokens=16, thinking={"type": "disabled"},
-            output_config={"effort": config.brain.fast_effort},
-            messages=[{"role": "user", "content": "Reply with the single word: ready"}],
-        ) as stream:
+        async with (
+            anthropic.AsyncAnthropic(api_key=key, max_retries=0, timeout=20) as client,
+            client.messages.stream(
+                model=model, max_tokens=16, thinking={"type": "disabled"},
+                output_config={"effort": config.brain.fast_effort},
+                messages=[{"role": "user", "content": "Reply with the single word: ready"}],
+            ) as stream,
+        ):
             async for text in stream.text_stream:
                 if first is None and text.strip():
                     first = time.monotonic() - start
@@ -143,7 +145,9 @@ async def check_google(config: Config, http: httpx.AsyncClient) -> list[Check]:
     calendar = gcal.Calendar(session, config.location.timezone)
 
     async def events() -> str:
-        start = gcal.instant(datetime.now().date().isoformat(), config.location.timezone)
+        zone = gcal._zone(config.location.timezone)
+        today = (datetime.now(zone) if zone else datetime.now()).date()
+        start = gcal.instant(today.isoformat(), config.location.timezone)
         items = await calendar.events(start.isoformat(), (start + timedelta(days=1)).isoformat())
         return f"{len(items)} event(s) today"
 
@@ -192,8 +196,12 @@ async def _first_line(text: Awaitable[str]) -> str:
     return (await text).splitlines()[0]
 
 
-async def run_checks(config: Config, http: httpx.AsyncClient | None = None) -> list[Check]:
-    http = http or httpx.AsyncClient(timeout=15)
+async def run_checks(config: Config) -> list[Check]:
+    async with httpx.AsyncClient(timeout=15) as http:
+        return await _run_checks(config, http)
+
+
+async def _run_checks(config: Config, http: httpx.AsyncClient) -> list[Check]:
     results = check_config(config)
     results.append(await check_claude(config))
     results.append(await check_deepgram(http))

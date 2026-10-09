@@ -17,6 +17,8 @@ from datetime import datetime
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from loguru import logger
+
 from .actions import ActionResult, Channel, ToolError, ToolRegistry
 from .config import BrainConfig
 from .gate import ConfirmationGate
@@ -408,6 +410,7 @@ class Agent:
         except ToolError as e:
             return self._tool_result(block.id, f"{tool.service or tool.name}: {e}", True), ""
         except Exception as e:  # report, don't crash the conversation
+            logger.exception(f"{tool.name} failed")
             return self._tool_result(block.id, f"{tool.name} failed unexpectedly: {e}", True), ""
         res = out if isinstance(out, ActionResult) else ActionResult(str(out))
         if res.untrusted:

@@ -151,7 +151,10 @@ def meeting_tally(events: list[dict[str, Any]], start: datetime, end: datetime) 
 
 def build_tools(cal: Calendar) -> list[Tool]:
     def window(args: dict[str, Any]) -> tuple[datetime, datetime]:
-        return instant(args["start"], cal.tz), instant(args["end"], cal.tz)
+        start, end = instant(args["start"], cal.tz), instant(args["end"], cal.tz)
+        if end <= start and len(args["end"]) == 10:  # "2026-10-09 to 2026-10-09" means that whole day
+            end = instant((date.fromisoformat(args["end"]) + timedelta(days=1)).isoformat(), cal.tz)
+        return start, end
 
     async def list_events(args: dict[str, Any]) -> str:
         start, end = window(args)
