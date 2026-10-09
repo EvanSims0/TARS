@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="tars-token" content="__TOKEN__">
+<title>Set up TARS</title>
+<link rel="stylesheet" href="/static/tars.css">
+<style>
+  .wrap { padding: 28px 36px; display: flex; flex-direction: column; gap: 20px; max-width: 760px; }
+  .titleblock { display: grid; gap: 6px; padding-bottom: 8px; }
+  .keyrow { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--r-card); min-height: 46px; }
+  .keyrow.done { background: var(--card); }
+  .keyrow.next { border: 1px solid var(--slate); color: var(--text-2); }
+  .keyrow .grow { flex: 1; }
+  .keyrow .sub { font-size: 12px; color: var(--text-2); }
+  .active { display: grid; gap: 8px; }
+  .hint { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--text-2); }
+  .err { font-size: 12px; color: var(--text); }
+  .err::before { content: "\26A0  "; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field .h3 { font-size: 13px; }
+  .field .input { height: 44px; padding: 10px 12px; }
+  .field .input:focus-within { padding: 9px 11px; }
+  .coords { font: 500 12px var(--mono); color: var(--text-2); }
+  .steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
+  .checks { display: grid; gap: 0; padding: 0; }
+  .checks .c { display: flex; gap: 12px; align-items: baseline; padding: 9px 14px; border-bottom: 1px solid var(--slate); font-size: 13px; }
+  .checks .c:last-child { border-bottom: none; }
+  .checks .c .m { font: 700 10px var(--mono); width: 34px; flex: none; }
+  .checks .c .n { width: 130px; flex: none; color: var(--text-2); }
+  .footer { display: flex; align-items: center; gap: 12px; padding-top: 8px; }
+  @media (max-width: 640px) { .wrap { padding: 20px 16px; } .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="window">
+  <div id="titlebar"></div>
+  <main><div class="wrap" id="wrap"></div></main>
+</div>
+<script src="/static/tars.js"></script>
+<script>
+(() => {
+  const { api, el, icon, key, toast, shortcut, toggle } = TARS;
+  document.getElementById("titlebar").replaceWith(TARS.titlebar("Set up TARS"));
+  const STEPS = ["You", "Keys", "Google", "Headset", "Start at login", "First run"];
+  const KEYS = [
+    ["ANTHROPIC_API_KEY", "Language model", "console.anthropic.com → API keys. Set a monthly limit there too."],
+    ["DEEPGRAM_API_KEY", "Speech-to-text", "console.deepgram.com → API keys."],
+    ["ELEVENLABS_API_KEY", "Voice", "elevenlabs.io → Profile → API keys."],
+    ["TODOIST_API_TOKEN", "Tasks", "todoist.com → Settings → Integrations → Developer → API token."],
+  ];
+  let step = 0, state = null, checking = {}, errors = {}, checks = null, pollTimer = 0;
+  const verified = () => KEYS.every(([k]) => state.keys[k]);
+
+  async function refresh() { state = await api("/api/setup"); }
+
+  function stepper() {
+    const kids = [];
+    STEPS.forEach((name, i) => {
+      if (i) kids.push(el("span", { class: "join" }));
+      const cls = i < step ? "done" : i === step ? "current" : "";
+      kids.push(el("span", { class: "step " + cls }, el("span", { class: "dot" }, i < step ? icon("check", 14) : String(i + 1)), name));
+    });
+    return el("div", { class: "stepper", "aria-label": `Step ${step + 1} of ${STEPS.length}` }, kids);
+  }
+  const title = (h, p) => el("div", { class: "titleblock" }, el("h1", { class: "h1" }, h), el("p", { class: "body muted", style: "margin:0" }, p));
+  const field = (label, input) => el("label", { class: "field" }, el("span", { class: "h3" }, label), el("span", { class: "input" }, input));
+
+  // ---------- 1 · You ----------
+  function you(next) {
+    const y = state.you;
+    const tz = y.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    const name = el("input", { id: "name", value: y.user_name || "", autocomplete: "given-name" });
+    const email = el("input", { id: "email", type: "email", value: y.user_email || "", autocomplete: "email" });
+    const home = el("input", { id: "home", value: y.home_address || "", autocomplete: "street-address" });
+    const town = el("input", { id: "town", placeholder: "e.g. Brooklyn" });
+    const coords = el("div", { class: "coords", id: "coords" });
+    let place = { latitude: y.latitude, longitude: y.longitude, timezone: tz };
+    const paint = () => { coords.textContent = place.latitude != null ? `${place.latitude}, ${place.longitude} · ${place.timezone}` : `Weather needs your town. Timezone: ${place.timezone}`; };
+    paint();
+    const find = async () => {
+      if (!town.value.trim()) return;
+      coords.textContent = "Looking it up…";
+      try { const r = await api("/api/geocode", { place: town.value.trim() }); place = { ...r, timezone: r.timezone || place.timezone }; paint(); toast(`Found ${r.name}`); }
+      catch (e) { coords.textContent = e.message; }
+    };
+    town.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find(); } });
+    next.validate = () => name.value.trim() && /@/.test(email.value) && place.latitude != null;
+    next.save = () => api("/api/settings", { values: {
+      user_name: name.value.trim(), user_email: email.value.trim(), "location.home_address": home.value.trim(),
+      "location.latitude": place.latitude, "location.longitude": place.longitude, "location.timezone": place.timezone } });
+    [name, email, home].forEach((i) => i.addEventListener("input", () => next.update()));
+    return [
+      title("Tell TARS who you are", "It uses these to say your name, to email you, and for the weather and travel times."),
+      el("div", { class: "grid2" }, field("What should TARS call you?", name), field("Your Gmail address", email)),
+      field("Home address", home),
+      el("div", { class: "field" }, el("span", { class: "h3" }, "Town or city, for the weather"),
+        el("div", { style: "display:flex;gap:10px" }, el("span", { class: "input", style: "flex:1;height:44px;padding:10px 12px" }, town),
+          el("button", { type: "button", class: "btn", onclick: async () => { await find(); next.update(); } }, "Find", key("Enter"))), coords),
+    ];
+  }
+
+  // ---------- 2 · Keys (from the design) ----------
+  function keys(next) {
+    const rows = [];
+    const firstOpen = KEYS.findIndex(([k]) => !state.keys[k]);
+    KEYS.forEach(([name, label, where], i) => {
+      if (state.keys[name] && i !== firstOpen) {
+        rows.push(el("div", { class: "keyrow done" }, icon("check", 18), el("span", { class: "body", style: "font-weight:500" }, `Key ${i + 1} · ${label}`),
+          el("span", { class: "grow" }), el("span", { class: "small muted" }, errors[name] ? "Check failed" : "Verified")));
+      } else if (i === firstOpen) {
+        const input = el("input", { type: "password", class: "mono", id: "key-input", autocomplete: "off", spellcheck: "false",
+          "aria-label": `${label} key`, placeholder: "Paste the key" });
+        const status = el("span", { class: "small muted", style: "display:flex;gap:6px;align-items:center" });
+        if (checking[name]) status.append(icon("spinner", 16), "Checking…");
+        const submit = async () => {
+          if (!input.value.trim()) return;
+          checking[name] = true; delete errors[name]; render();
+          try {
+            const r = await api("/api/accounts/key", { name, value: input.value });
+            const bad = r.results.find((x) => x.ok === false);
+            if (bad) errors[name] = bad.detail;
+          } catch (e) { errors[name] = e.message; }
+          checking[name] = false;
+          await refresh();
+          if (errors[name]) state.keys[name] = false;
+          render();
+        };
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+        rows.push(el("div", { class: "active" },
+          el("span", { class: "h3", style: "font-size:13px" }, `Key ${i + 1} of ${KEYS.length} · ${label}`),
+          el("label", { class: "input", style: "border:2px solid var(--text);padding:11px 13px" }, input, status),
+          errors[name] ? el("div", { class: "err" }, errors[name]) : null,
+          el("div", { class: "hint" }, icon("lock", 16),
+            el("span", {}, `Find it at ${where} Saved to Windows Credential Manager. After saving it’s never shown again. Not even to you. Especially not to you.`))));
+        setTimeout(() => input.focus(), 0);
+      } else {
+        rows.push(el("div", { class: "keyrow next" }, el("span", {}, `Key ${i + 1} · ${label}`), el("span", { class: "grow" }), el("span", { class: "caption" }, "Up next")));
+      }
+    });
+    next.validate = () => verified() && !Object.keys(errors).length;
+    next.hint = "Next unlocks when the check passes";
+    return [title("Add your keys", "One at a time. Each key gets a live check, the same one tars check runs."), ...rows];
+  }
+
+  // ---------- 3 · Google ----------
+  function google(next) {
+    const gs = state.google_status || {};
+    const file = el("input", { type: "file", accept: ".json,application/json", hidden: true, id: "client-file" });
+    file.addEventListener("change", async () => {
+      try { await api("/api/accounts/google", { client: JSON.parse(await file.files[0].text()) }); }
+      catch (e) { toast(e.message); }
+      poll();
+    });
+    next.validate = () => state.google;
+    next.hint = "Next unlocks once Google is connected";
+    next.skip = true;
+    return [
+      title("Connect Gmail and Calendar", "TARS signs in with your own Google Cloud app, so your mail never passes through anyone else’s."),
+      state.google
+        ? el("div", { class: "keyrow done" }, icon("check", 18), el("span", { class: "body", style: "font-weight:500" }, "Google connected"),
+            el("span", { class: "grow" }), el("button", { type: "button", class: "btn btn-sm", onclick: () => file.click() }, "Reconnect"))
+        : el("ol", { class: "steps" },
+            el("li", {}, "Choose the OAuth client file you downloaded from Google Cloud (it starts with client_secret)."),
+            el("li", {}, "A browser opens. Pick your Gmail account."),
+            el("li", {}, "Google says it hasn’t verified the app. Choose Advanced, then Go to TARS. It’s your own app."),
+            el("li", {}, "Tick every permission and continue.")),
+      state.google ? null : el("div", {}, el("button", { type: "button", class: "btn btn-primary", onclick: () => file.click() }, "Choose the file", key("O"))),
+      gs.message ? el("div", { class: gs.state === "failed" ? "err" : "small muted", style: "display:flex;gap:8px;align-items:center" },
+        gs.state === "waiting" ? icon("spinner", 16) : null, gs.message) : null,
+      file,
+    ];
+  }
+  function poll() {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      await refresh();
+      if (state.google_status.state !== "waiting") { clearInterval(pollTimer); }
+      render();
+    }, 1500);
+  }
+
+  // ---------- 4 · Headset ----------
+  async function headset(next) {
+    const d = await api("/api/devices").catch(() => ({ available: false }));
+    next.validate = () => true;
+    if (!d.available) return [title("Pick your headset", "Pair it in Windows Bluetooth settings and make it the default for sound in and out."),
+      el("p", { class: "small muted" }, "The device list shows when the voice extras are installed.")];
+    const choose = (id, list, current, label) => {
+      const sel = el("select", { id }, el("option", { value: "" }, "Windows default"),
+        list.map((x) => el("option", { value: x.index, selected: x.index === current ? "" : null }, x.name)));
+      return el("label", { class: "field" }, el("span", { class: "h3" }, label), el("span", { class: "input" }, sel));
+    };
+    const mic = choose("mic", d.inputs, state.voice.input, "Microphone");
+    const spk = choose("spk", d.outputs, state.voice.output, "Speaker");
+    next.save = () => {
+      const val = (box) => { const v = box.querySelector("select").value; return v === "" ? null : Number(v); };
+      return api("/api/settings", { values: { "voice.input_device_index": val(mic), "voice.output_device_index": val(spk) } });
+    };
+    return [title("Pick your headset", "Leave both on Windows default if the headset already is. TARS opens the mic only while you talk, so Bluetooth stays in high-quality mode."),
+      el("div", { class: "grid2" }, mic, spk),
+      el("div", { class: "hint" }, icon("dial", 16), el("span", {}, "In Windows Settings → Privacy → Microphone, let desktop apps use the microphone."))];
+  }
+
+  // ---------- 5 · Start at login ----------
+  function startup(next) {
+    next.validate = () => true;
+    if (!state.windows) return [title("Start TARS at login", "On Windows, TARS starts when you sign in and backs up its memory every night."),
+      el("p", { class: "small muted" }, "This PC isn’t running Windows, so start TARS yourself with tars voice.")];
+    return [title("Start TARS at login", "TARS starts when you sign in, so it’s there when you press the hotkey. Its memory is backed up every night at 3:00."),
+      el("div", { class: "row", style: "display:flex;align-items:center;gap:16px" },
+        el("div", { style: "flex:1" }, el("div", { class: "h3" }, "Start TARS when I sign in"),
+          el("div", { class: "small muted" }, "Also schedules the nightly memory backup.")),
+        toggle({ id: "startup", label: "Start TARS when I sign in", checked: false,
+          onChange: async (on) => { await api("/api/startup", { enable: on }); toast(on ? "TARS will start when you sign in" : "Start at login is off"); } })),
+      el("div", { class: "hint" }, icon("timer", 16), el("span", {}, "For the backup to wake the PC: Power Options → Sleep → Allow wake timers → Enable."))];
+  }
+
+  // ---------- 6 · First run ----------
+  function firstRun(next) {
+    next.validate = () => true;
+    next.finish = true;
+    const list = el("div", { class: "card checks" });
+    if (!checks) {
+      list.append(el("div", { class: "c" }, icon("spinner", 16), el("span", {}, "Checking every account…")));
+      api("/api/check").then((r) => { checks = r.results; render(); }).catch((e) => { checks = [{ name: "Check", ok: false, detail: e.message }]; render(); });
+    } else {
+      for (const c of checks) list.append(el("div", { class: "c" },
+        el("span", { class: "m" }, c.ok === true ? "OK" : c.ok === false ? "FIX" : "SKIP"), el("span", { class: "n" }, c.name), el("span", {}, c.detail)));
+    }
+    const failed = checks ? checks.filter((c) => c.ok === false).length : 0;
+    return [title("First run", checks ? (failed ? `${failed} thing${failed === 1 ? "" : "s"} to fix. Go back to that step, or fix it later in Settings → Accounts.`
+        : "Everything answered. Time to say hello.") : "One read-only call to each account. Nothing is changed or sent."),
+      list,
+      checks ? el("button", { type: "button", class: "link", onclick: () => { checks = null; render(); } }, "Run the checks again") : null,
+      el("div", { class: "well" }, el("span", { class: "label" }, "Try it"),
+        el("div", { class: "body" }, "Press Ctrl+Alt+Space and say “What’s on today?” The card appears bottom-right while TARS listens and answers."))];
+  }
+
+  const BUILDERS = [you, keys, google, headset, startup, firstRun];
+  async function render() {
+    const wrap = document.getElementById("wrap");
+    const next = { validate: () => true, update: () => paintFooter() };
+    const content = await BUILDERS[step](next);
+    const back = el("button", { type: "button", class: "btn", disabled: step === 0 ? "" : null, onclick: () => go(-1) }, "Back", key("Alt+B"));
+    const hint = el("span", { class: "caption" });
+    const nextBtn = el("button", { type: "button", class: "btn btn-primary", id: "next", onclick: async () => {
+      if (nextBtn.getAttribute("aria-disabled") === "true") return;
+      try { if (next.save) await next.save(); } catch (e) { return toast(e.message); }
+      if (next.finish) { toast("TARS is set up"); const h = window.pywebview && window.pywebview.api; if (h && h.close) h.close(); return; }
+      go(1);
+    } }, next.finish ? "Finish" : "Next", key("Enter"));
+    const skip = next.skip ? el("button", { type: "button", class: "link", style: "font-weight:500;color:var(--text-2)", onclick: () => go(1) }, "Skip for now") : null;
+    function paintFooter() {
+      const ok = !!next.validate();
+      nextBtn.setAttribute("aria-disabled", String(!ok));
+      hint.textContent = ok ? "" : (next.hint || "Fill in the fields above");
+    }
+    wrap.replaceChildren(stepper(), ...content.filter(Boolean),
+      el("div", { class: "footer" }, back, el("span", { class: "spacer" }), skip, hint, nextBtn));
+    paintFooter();
+  }
+  function go(delta) { step = Math.max(0, Math.min(STEPS.length - 1, step + delta)); render(); }
+  shortcut("alt+b", () => go(-1));
+  shortcut("Enter", (e) => { if (!e.target.matches("input")) document.getElementById("next")?.click(); });
+  shortcut("o", () => document.getElementById("client-file")?.click());
+
+  (async () => {
+    try { await refresh(); } catch (e) { document.getElementById("wrap").replaceChildren(el("p", {}, e.message)); return; }
+    // Pick up where things stand: the first step that isn't done yet.
+    const y = state.you;
+    step = !(y.user_name && y.user_email && y.latitude != null) ? 0 : !verified() ? 1 : !state.google ? 2 : 3;
+    render();
+  })();
+})();
+</script>
+</body>
+</html>

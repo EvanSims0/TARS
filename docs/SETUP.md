@@ -10,15 +10,19 @@ The versions that passed the tests are pinned in `uv.lock`; `uv` installs exactl
 powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex"   # once; then open a new window
 git clone https://github.com/EvanSims0/TARS
 cd TARS
-uv sync --locked --extra voice
+uv sync --locked --extra voice --extra desktop
 .venv\Scripts\activate
-tars init
+tars setup
 ```
+
+`tars setup` opens the setup wizard: your name and home, each key with a live check, Google,
+your headset, start at login, and a first-run check of everything. The sections below are the
+same steps by hand, if you'd rather.
 
 Without `uv`, `py -m venv .venv`, `.venv\Scripts\activate` and `pip install -e ".[voice]"` also work,
 but install the newest versions rather than the tested ones.
 
-`tars init` writes `%APPDATA%\TARS\config.toml`. Open it and fill in your name, your Gmail
+`tars init` (or the wizard) writes `%APPDATA%\TARS\config.toml`. Open it and fill in your name, your Gmail
 address (`user_email`, so "email me" works), home address, latitude, longitude and timezone.
 
 ## 2. Accounts and keys
@@ -59,7 +63,12 @@ tars chat            # talk by typing, same brain and tools as voice
 tars voice           # push-to-talk: Ctrl+Alt+Space to talk, Ctrl+Alt+M to mute
 tars status          # what's connected, today's response times and spend
 tars memory          # the memory map: browse, search and forget what TARS remembers
+tars ui history      # the History window (also settings, status, overlay)
 ```
+
+With `tars voice` running on Windows, TARS sits in the tray: right-click it for History, Settings,
+Memory and Status. The overlay appears bottom-right while you talk, never takes focus from the app
+you're in, and can be dragged; it remembers where you put it.
 
 `tars check` creates, changes and sends nothing. Its Claude call costs a fraction of a cent. If
 the headset isn't the Windows default device, put the numbers `tars devices` shows into

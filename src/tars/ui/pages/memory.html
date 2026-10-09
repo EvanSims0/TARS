@@ -3,24 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TARS memory</title>
+<meta name="tars-token" content="__TOKEN__">
+<title>TARS · Memory</title>
+<link rel="stylesheet" href="/static/tars.css">
 <style>
+  /* The design system's tokens, under the names this page's map code uses. */
   :root {
-    --bg: #36454f;          /* charcoal */
-    --surface: #2e3b44;
-    --surface-2: #26323a;
-    --text: #ffffff;
+    --bg: #36454f;          /* surface */
+    --surface: #2b3840;     /* surface-deep: the side panel, like History's list */
+    --surface-2: #405260;   /* card */
     --muted: #d3d3d3;
     --line: #708090;        /* slate: borders and links only, never text */
-    --font: "DejaVu Sans", "Segoe UI", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body { background: var(--bg); color: var(--text); font: 15px/1.45 var(--font);
-         display: grid; grid-template-rows: auto auto 1fr; }
+         display: grid; grid-template-rows: 32px auto auto 1fr; }
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
            padding: 12px 16px; border-bottom: 1px solid var(--line); }
-  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: .02em; }
+  h1 { font-size: 22px; font-weight: 700; margin: 0; }
   #count { color: var(--muted); font-size: 13px; }
   .spacer { flex: 1; }
   input[type=search] { background: var(--surface-2); color: var(--text); border: 1px solid var(--line);
@@ -90,8 +91,9 @@
 </style>
 </head>
 <body>
+<div id="titlebar"></div>
 <header>
-  <h1>TARS memory</h1>
+  <h1>Memory</h1>
   <span id="count"></span>
   <span class="spacer"></span>
   <input id="search" type="search" placeholder="Search memory  ( / )" aria-label="Search memory">
@@ -111,8 +113,10 @@
   <aside id="panel" aria-live="polite"></aside>
 </main>
 <div id="toast" role="status"></div>
+<script src="/static/tars.js"></script>
 <script>
 "use strict";
+document.getElementById("titlebar").replaceWith(TARS.titlebar("TARS · Memory"));
 const TOKEN = "__TOKEN__";
 const NS = "http://www.w3.org/2000/svg";
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -336,7 +340,8 @@ function render(fit) {
       if (state.focus === n.name) g.classList.add("active");
       g.setAttribute("aria-label", `${n.name}, ${n.count} fact${n.count === 1 ? "" : "s"}`);
       g.append(s("circle", { r: n.r }));
-      const below = Math.sin(n.a) > 0.3, above = Math.sin(n.a) < -0.3;
+      // Bottom branches label below; all others above, so a label never sits on its own facts.
+      const below = Math.sin(n.a) > 0.3, above = !below;
       const ty = below ? n.r + 18 : above ? -n.r - 18 : 4;
       const anchor = below || above ? "middle" : Math.cos(n.a) >= 0 ? "start" : "end";
       const tx = below || above ? 0 : Math.cos(n.a) >= 0 ? n.r + 8 : -n.r - 8;

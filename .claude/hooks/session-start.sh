@@ -18,4 +18,4 @@ if ! command -v uv >/dev/null 2>&1; then
   pip install -q uv
 fi
 
-uv sync --locked --extra voice --extra dev
+uv sync --locked --extra voice --extra desktop --extra dev

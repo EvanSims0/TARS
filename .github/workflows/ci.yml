@@ -32,10 +32,10 @@ jobs:
       - name: The base install starts without the voice extras
         run: |
           uv sync --locked
-          uv run --no-sync python -c "import tars.app, tars.cli"
+          uv run --no-sync python -c "import tars.app, tars.cli, tars.ui.server, tars.ui.desktop"
 
       - name: Install everything from the lockfile
-        run: uv sync --locked --extra voice --extra dev
+        run: uv sync --locked --extra voice --extra desktop --extra dev
 
       - name: Lint
         run: uv run --no-sync ruff check src tests

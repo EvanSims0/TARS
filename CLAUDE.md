@@ -10,7 +10,7 @@ Open-Meteo. The spec is `docs/PRD.md`; the phase-gate acceptance test is `docs/T
 ## Commands
 
 ```bash
-uv sync --locked --extra voice --extra dev   # Linux needs portaudio19-dev for PyAudio
+uv sync --locked --extra voice --extra desktop --extra dev   # Linux needs portaudio19-dev for PyAudio
 uv run pytest -q                             # all offline tests (~3 s, no API calls, no spend)
 uv run pytest tests/test_gate.py::test_clear_yes -q   # one test
 uv run ruff check src tests                  # lint (rule set pinned in pyproject.toml)
@@ -54,18 +54,28 @@ runs on Windows and Linux. CI also checks that the base install (no `voice` extr
 - **Voice** (`voice/`): `TarsBrain` is the Pipecat processor between STT and TTS; `PhraseChunker`
   feeds speakable phrases to TTS early; `PushToTalkInput` opens the mic only on the hotkey and
   closes it after `follow_up_seconds` so a Bluetooth headset stays in high-quality mode.
-- **Memory map** (`memory_map.py` + `memory_map.html`): a stdlib HTTP server on 127.0.0.1 (random
-  port, started on first use) serving one self-contained page and a JSON API. Every request needs
-  the random token and a loopback Host header. The page polls `/api/memory` and can only forget
-  facts (`Vault.remove_line`), never add or edit them. `Vault` holds a lock because this server
-  thread writes to it too.
+- **Desktop UI** (`ui/`): the design system is `ui/static/tars.css` + `tars.js` (tokens from the
+  "BRICK – AI PA concept" Figma file: surfaces `#36454f`/`#2b3840`/`#405260`/`#4b5e6c`, text white and
+  `#d3d3d3`, slate `#708090` for borders only; system fonts; every state a distinct shape; motion off
+  under reduced-motion). Pages live in `ui/pages/`. `ui/server.py` (`AppServer`) is a stdlib HTTP
+  server on 127.0.0.1 with a random port; every page and API call needs the random token and a
+  loopback Host header, and POSTs must be JSON. Account actions run on TARS's own loop via
+  `ctx.loop`; overlay buttons become typed turns via `ctx.submit`; tray actions use `ctx.controls`.
+  `ui/live.py` (`LiveState`) is what the overlay long-polls (`/api/live?since=version`); the agent,
+  brain and mic write to it. `ActionLog` records every non-read action with its undo id for History.
+  Settings write through `config_edit.set_values` (keeps comments; only keys in `EDITABLE`).
+  `ui/desktop.py` is the Windows shell (pystray tray, pywebview overlay and windows), a separate
+  process that only talks to the server; its token travels in the environment, not argv.
+- **Cue light**: the personality guide asks the model to start a joking sentence with `⁂`
+  (`JOKE_MARK`); `Agent.handle`'s `say` strips it before speech and transcripts and lights the cue.
 - **State on disk** lives under `%APPDATA%\TARS` (or `TARS_HOME`; `~/.tars` elsewhere): config.toml,
   the Obsidian memory vault, transcripts and logs (kept `privacy.transcript_days`), spend and
   per-turn timing logs. Keys live in the OS credential store via `secrets` (env vars override).
 
 ## Tests
 
-Tests never touch the network. Agent tests script model responses with `conftest.FakeBackend` and
+Tests never touch the network. `tests/test_ui.py` covers the app server's security and APIs with a
+real server on a random port. Agent tests script model responses with `conftest.FakeBackend` and
 `reply/text/tool_use/thinking`; integration tests mock HTTP with `respx`; `test_backend.py` runs the
 real Anthropic SDK against a mocked SSE stream via `httpx2`. Use the `make_agent` fixture, which
 pins the clock and the `America/New_York` timezone.
