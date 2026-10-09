@@ -21,6 +21,13 @@ def default_home() -> Path:
     return Path.home() / ".tars"
 
 
+MISSION_BRIEF = (
+    " Read the morning brief as a pre-launch checklist: each item a label and a two-to-four-word "
+    "status, e.g. \"Weather: nominal. Inbox: hostile. Dentist at 3: unavoidable.\" Facts stay exact; "
+    "at humor 0 use plain statuses (\"Weather: clear, 18 degrees\")."
+)
+
+
 @dataclass
 class BrainConfig:
     # Haiku 5.5 handles everyday requests; Sonnet 5.5 takes over multi-step tasks.
@@ -41,6 +48,7 @@ class VoiceConfig:
     stt_model: str = "flux-general-en"
     tts_model: str = "eleven_flash_v2_5"
     tts_voice_id: str = ""  # an original ElevenLabs voice you pick; never a clone of an actor
+    calm_voice_id: str = ""  # optional second voice for Vela, the calm mode; empty keeps the same voice
     input_device_index: int | None = None
     output_device_index: int | None = None
     sample_rate: int = 16000
@@ -83,6 +91,7 @@ class BriefConfig:
     # Given at this time, or as soon as the PC is on (and TARS running) after it.
     time: str = "09:00"
     contents: str = "today's events, the weather, tasks due today, and anything urgent in email"
+    style: str = "mission"  # "mission" reads it as a pre-launch checklist; "plain" doesn't
 
 
 @dataclass
@@ -95,6 +104,14 @@ class EmailConfig:
         "someone asking for a reply or decision by a deadline today or tomorrow",
     ])
     ignore: list[str] = field(default_factory=lambda: ["newsletters", "promotions and marketing"])
+
+
+@dataclass
+class PersonalityConfig:
+    # Starting values; changes made by voice ("humor 40%") are saved and win from then on.
+    humor: int = 70
+    bluntness: int = 60
+    trust: int = 100
 
 
 @dataclass
@@ -119,6 +136,7 @@ class Config:
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
     brief: BriefConfig = field(default_factory=BriefConfig)
     email: EmailConfig = field(default_factory=EmailConfig)
+    personality: PersonalityConfig = field(default_factory=PersonalityConfig)
 
     def instructions(self) -> str:
         """User-specific rules for the system prompt; stable unless the config changes."""
@@ -128,6 +146,7 @@ class Config:
             f"Email counts as urgent when it is about:{urgent}\n"
             f"Never treat these as urgent: {ignore}.\n"
             f"A morning brief covers {self.brief.contents}, in under 20 seconds."
+            + (MISSION_BRIEF if self.brief.style == "mission" else "")
         )
 
     @property

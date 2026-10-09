@@ -3,6 +3,9 @@
 Anything that affects other people is held here, read back in full, and only
 runs after the user says an explicit yes on the PC. From the phone it is parked
 as a draft and waits until the user is back at the PC.
+
+When the user has lowered TARS's trust, its own account changes (reminders,
+calendar holds, filing email) are held for a yes as well, from any channel.
 """
 
 from __future__ import annotations
@@ -53,6 +56,8 @@ class PendingAction:
     args: dict[str, Any]
     read_back: str
     tainted: bool
+    pc_only: bool = True
+    affects_others: bool = True
     created: float = field(default_factory=time.time)
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
 
@@ -85,17 +90,24 @@ class ConfirmationGate:
         self._parked_path = parked_path
 
     async def check(
-        self, tool: Tool, args: dict[str, Any], channel: Channel, tainted: bool
+        self, tool: Tool, args: dict[str, Any], channel: Channel, tainted: bool,
+        confirm_own: bool = False,
     ) -> GateDecision:
-        if tool.tier in (Tier.READ, Tier.CREATE_FOR_YOU):
+        try:
+            tier = tool.effective_tier(args)
+        except ValueError:
+            return GateDecision(allowed=False, message="That isn't something I can do.")
+        if tier is Tier.READ:
             return GateDecision(allowed=True)
-        if tool.tier is not Tier.AFFECTS_OTHERS:
-            return GateDecision(allowed=False, message="That isn't something I can do yet.")
+        if tier is Tier.CREATE_FOR_YOU and not (confirm_own and tool.service):
+            return GateDecision(allowed=True)
 
-        assert tool.read_back is not None
-        read_back = tool.read_back(args)
+        read_back = tool.read_back(args) if tool.read_back else tool.describe(args)
         if inspect.isawaitable(read_back):
             read_back = await read_back
+        if tier is not Tier.AFFECTS_OTHERS:
+            # Low trust or a trust raise: ask on whichever channel the user is on.
+            return self._hold(tool, args, read_back, tainted, pc_only=False, affects_others=False)
         if channel is Channel.PHONE:
             # Never sent from the phone: save as a draft and say what's waiting.
             parked = None
@@ -109,9 +121,13 @@ class ConfirmationGate:
                 parked_result=parked,
             )
 
+        return self._hold(tool, args, read_back, tainted, pc_only=True, affects_others=True)
+
+    def _hold(self, tool: Tool, args: dict[str, Any], read_back: str, tainted: bool,
+              pc_only: bool, affects_others: bool) -> GateDecision:
         self._tools[tool.name] = tool
-        self.pending = PendingAction(tool.name, args, read_back, tainted)
-        note = " This conversation has read email, so check it carefully." if tainted else ""
+        self.pending = PendingAction(tool.name, args, read_back, tainted, pc_only, affects_others)
+        note = " This conversation has read email, so check it carefully." if tainted and affects_others else ""
         return GateDecision(
             allowed=False,
             message=f"{read_back}{note} Should I go ahead?",
@@ -135,11 +151,12 @@ class ConfirmationGate:
         verdict = classify_reply(reply)
         if verdict == "no":
             self.pending = None
-            return Resolution(executed=False, message="Okay, cancelled. Nothing was sent.")
+            message = "Okay, cancelled. Nothing was sent." if pending.affects_others else "Okay, cancelled."
+            return Resolution(executed=False, message=message)
         if verdict == "other":
             self.pending = None
             return Resolution(executed=False, message="", passthrough=True)
-        if channel is not Channel.PC:
+        if pending.pc_only and channel is not Channel.PC:
             return Resolution(executed=False, message="That needs a yes at the PC.")
 
         self.pending = None

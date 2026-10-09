@@ -21,6 +21,7 @@ from pipecat.frames.frames import (
     ProposedUserStartedSpeakingFrame,
     TranscriptionFrame,
     TTSSpeakFrame,
+    TTSUpdateSettingsFrame,
     UserStartedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
@@ -130,6 +131,10 @@ class TarsBrain(FrameProcessor):
         else:
             self.on_state("idle")
             self.on_bot_done()
+
+    async def set_voice(self, settings) -> None:
+        """Switch the TTS voice (Vela, the calm mode, can have its own)."""
+        await self.push_frame(TTSUpdateSettingsFrame(delta=settings))
 
     async def start_turn(self, text: str) -> None:
         """Begin a turn TARS starts itself, such as the morning brief."""

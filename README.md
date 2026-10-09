@@ -44,6 +44,23 @@ push-to-talk mic ─► Deepgram Flux ─► TarsBrain ─► ElevenLabs Flash v
 | Memory vault with "noted" / "forget that", 7-day transcripts, nightly backup | Proactive features (Phase 3) |
 | Morning brief at 9am, or as soon as the PC is on after 9 | |
 | Spend cap, per-turn response time and cost log, `tars status` | |
+| Personality sliders (humor, bluntness, trust), Vela calm mode, discretion and stress dial-down, meeting tally, black hole | |
+
+## Personality
+
+Say any of these and TARS changes on the spot (and remembers):
+
+| Say | What happens |
+|---|---|
+| "Humor 40%" | Fewer jokes. 0% is none; jokes never make a reply longer |
+| "Bluntness 90%" | Less tact about your drafts and plans. Facts stay exact at every level |
+| "Trust 60%" | Below 80%, TARS asks before changing your lists, calendar or email filing. Raising trust needs your yes |
+| "Vela mode" / "back to TARS" | Vela is the calm, joke-free assistant; it can have its own voice (`calm_voice_id`) |
+
+Humor drops to 0 while a Zoom, Teams or Webex meeting is running or a calendar event looks like a
+presentation, and to 30% when you have back-to-back meetings or tasks still open after 9pm.
+The morning brief reads like a pre-launch checklist. "How much time did I spend in meetings?"
+gives the time-dilation report, and "What's in the black hole?" lists tasks you keep postponing.
 
 ## Development
 

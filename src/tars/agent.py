@@ -21,6 +21,7 @@ from .config import BrainConfig
 from .gate import ConfirmationGate
 from .memory import Vault
 from .persona import SYSTEM_PROMPT
+from .personality import Personality
 from .spend import SpendLedger, SpendState, TurnLog
 from .local_tools import UndoStack
 from .transcripts import Transcripts
@@ -126,6 +127,7 @@ class Agent:
         user_name: str = "",
         user_email: str = "",
         instructions: str = "",
+        personality: Personality | None = None,
         clock: Callable[[], datetime] = datetime.now,
     ):
         self.backend = backend
@@ -141,6 +143,7 @@ class Agent:
         self.user_name = user_name
         self.user_email = user_email
         self.instructions = instructions
+        self.personality = personality or Personality()
         self.clock = clock
         self.messages: list[dict[str, Any]] = []
         self._producers: list[str | None] = []  # which model wrote each message
@@ -178,7 +181,7 @@ class Agent:
         if self.user_email:
             who += f" Their email address is {self.user_email}."
         where = "spoken at the PC" if channel is Channel.PC else "sent from the phone via Telegram"
-        return f"[{now:%A %d %B %Y, %H:%M}{tz}. Message {where}.{who}]"
+        return f"[{now:%A %d %B %Y, %H:%M}{tz}. Message {where}.{who} {self.personality.context()}]"
 
     def _request(self, model: str, deep: bool) -> dict[str, Any]:
         tools = [{**t, "eager_input_streaming": True} for t in self.registry.api_definitions()]
@@ -259,6 +262,8 @@ class Agent:
         if self.gate.has_pending():
             res = await self.gate.resolve(text, channel)
             if not res.passthrough:
+                if res.result is not None:
+                    self._remember_undo(res.result.undo_label, res.result)
                 self._append("user", [{"type": "text", "text": text}])
                 self._append("assistant", [{"type": "text", "text": res.message}])
                 await say(res.message)
@@ -273,6 +278,8 @@ class Agent:
             )
             return
 
+        if notice := self.personality.stress_notice():
+            await say(notice)
         self._append("user", [{"type": "text", "text": f"{self._context_line(channel)}\n{text}{note}"}])
         deep = False
         json_retries = 0
@@ -362,7 +369,9 @@ class Agent:
         if err := validate_input(args, tool.input_schema):
             return self._tool_result(block.id, f"INVALID_INPUT: {err}", True), ""
 
-        decision = await self.gate.check(tool, args, channel, self.tainted)
+        decision = await self.gate.check(
+            tool, args, channel, self.tainted, confirm_own=self.personality.confirm_own_actions
+        )
         if decision.pending is not None:
             return self._tool_result(
                 block.id, "Held for the user's spoken confirmation. The system is reading it back now; "

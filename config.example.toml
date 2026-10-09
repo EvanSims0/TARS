@@ -21,6 +21,7 @@ follow_up_seconds = 8.0
 stt_model = "flux-general-en"
 tts_model = "eleven_flash_v2_5"
 tts_voice_id = "CGldoNGr4XAY3PAcEM3x"   # the original TARS voice designed in ElevenLabs
+calm_voice_id = ""        # optional second voice for Vela, the calm mode
 # input_device_index = 1   # leave unset for the Windows default devices
 # output_device_index = 3
 
@@ -39,6 +40,14 @@ quiet_end = "08:00"
 enabled = true
 time = "09:00"            # spoken at 9, or as soon as the PC is on after 9 (once a day)
 contents = "today's events, the weather, tasks due today, and anything urgent in email"
+style = "mission"         # read as a pre-launch checklist; "plain" for a normal summary
+
+[personality]
+# Starting values. Saying "humor 40%", "bluntness 90%", "trust 60%", "Vela mode" or
+# "back to TARS" changes them, and spoken changes are remembered.
+humor = 70                # 0 = none; drops to 0 while presenting, 30 when you're swamped
+bluntness = 60            # tact only; facts are exact at every level
+trust = 100               # below 80, TARS asks before changing your lists, calendar or email
 
 [email]
 urgent = [

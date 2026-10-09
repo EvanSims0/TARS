@@ -12,9 +12,11 @@ from .actions import ToolRegistry
 from .agent import Agent, AnthropicBackend, Backend
 from .config import Config
 from .gate import ConfirmationGate
-from .local_tools import Timers, UndoStack
+from .local_tools import PersonalityListener, Timers, UndoStack, personality_tool
 from .local_tools import build_tools as local_tools
 from .memory import Vault
+from .mood import MoodMonitor
+from .personality import Personality, PersonalitySettings
 from .spend import SpendLedger, TurnLog
 from .transcripts import Transcripts
 
@@ -28,6 +30,10 @@ class App:
     transcripts: Transcripts
     ledger: SpendLedger
     turn_log: TurnLog
+    personality: Personality
+    mood: MoodMonitor
+    # Called after a personality change, e.g. to switch the voice for the calm mode.
+    personality_listeners: list[PersonalityListener] = field(default_factory=list)
     connected: dict[str, bool] = field(default_factory=dict)
 
 
@@ -47,6 +53,14 @@ def build_app(
     timers = Timers(announce)
     registry = ToolRegistry()
     registry.add(*local_tools(vault, transcripts, timers, undo))
+    defaults = config.personality
+    personality = Personality.load(
+        data / "personality.json",
+        PersonalitySettings(humor=defaults.humor, bluntness=defaults.bluntness, trust=defaults.trust),
+    )
+    listeners: list[PersonalityListener] = []
+    registry.add(personality_tool(personality, listeners))
+    mood = MoodMonitor(personality)
     connected: dict[str, bool] = {}
     http = httpx.AsyncClient(timeout=15)
 
@@ -59,7 +73,11 @@ def build_app(
     if token := secrets.get_secret(secrets.TODOIST_API_TOKEN):
         from .integrations import todoist
 
-        registry.add(*todoist.build_tools(todoist.TodoistClient(token, http), config.todoist))
+        client = todoist.TodoistClient(token, http)
+        tracker = todoist.PostponeTracker(data / "postponed.json")
+        registry.add(*todoist.build_tools(client, config.todoist, tracker))
+        mood.open_tasks_due_today = lambda: todoist.open_due_today(client)
+        mood.periodic.append(lambda: todoist.scan_black_hole(client, tracker))
     connected["Todoist"] = bool(token)
 
     from .integrations.google_auth import GoogleSession
@@ -68,7 +86,9 @@ def build_app(
     if session is not None:
         from .integrations import gcal, gmail
 
-        registry.add(*gcal.build_tools(gcal.Calendar(session, config.location.timezone)))
+        calendar = gcal.Calendar(session, config.location.timezone)
+        registry.add(*gcal.build_tools(calendar))
+        mood.events = lambda start, end: calendar.events(start.isoformat(), end.isoformat())
         registry.add(*gmail.build_tools(gmail.Gmail(session)))
     connected["Google (Gmail, Calendar)"] = session is not None
 
@@ -88,8 +108,9 @@ def build_app(
         user_name=config.user_name,
         user_email=config.user_email,
         instructions=config.instructions(),
+        personality=personality,
     )
-    return App(config, agent, timers, vault, transcripts, ledger, turn_log, connected)
+    return App(config, agent, timers, vault, transcripts, ledger, turn_log, personality, mood, listeners, connected)
 
 
 def status_lines(app: App) -> list[str]:
@@ -102,6 +123,9 @@ def status_lines(app: App) -> list[str]:
             f"  first word: typical {summary['first_word_p50_ms']} ms, 9 in 10 under "
             f"{summary['first_word_p90_ms']} ms, {round(summary['under_3s_share'] * 100)}% under 3 s"
         )
+    p = app.personality
+    lines.append(f"Personality: {p.name}, humor {p.settings.humor}%, bluntness {p.settings.bluntness}%, "
+                 f"trust {p.settings.trust}%")
     cap = app.config.spend.monthly_cap_usd
     lines.append(f"Spend: ${app.ledger.today_total():.2f} today, ${app.ledger.month_total():.2f} of ${cap:.0f} this month")
     parked = app.agent.gate.parked()

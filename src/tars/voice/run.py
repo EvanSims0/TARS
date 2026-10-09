@@ -42,6 +42,13 @@ def _require(name: str) -> str:
     return value
 
 
+def voice_for(config: Config, personality) -> str:
+    """The calm mode can have its own voice; otherwise both modes share TARS's voice."""
+    if personality.settings.calm and config.voice.calm_voice_id:
+        return config.voice.calm_voice_id
+    return config.voice.tts_voice_id
+
+
 def build_voice(config: Config, app, show_state: Callable[[str], None], deepgram_key: str, elevenlabs_key: str):
     """Assemble the pipeline; returns (worker, brain, mic)."""
     audio = transport({
@@ -59,7 +66,7 @@ def build_voice(config: Config, app, show_state: Callable[[str], None], deepgram
     )
     tts = ElevenLabsTTSService(
         api_key=elevenlabs_key,
-        settings=ElevenLabsTTSService.Settings(voice=config.voice.tts_voice_id, model=config.voice.tts_model),
+        settings=ElevenLabsTTSService.Settings(voice=voice_for(config, app.personality), model=config.voice.tts_model),
         # TarsBrain already sends speakable phrases; don't wait for whole sentences.
         text_aggregation_mode=TextAggregationMode.TOKEN,
     )
@@ -69,6 +76,12 @@ def build_voice(config: Config, app, show_state: Callable[[str], None], deepgram
         on_user_speaking=mic.user_speaking,
         on_bot_done=mic.close_after_quiet,
     )
+    async def switch_voice(personality) -> None:
+        await brain.set_voice(ElevenLabsTTSService.Settings(voice=voice_for(config, personality)))
+
+    if config.voice.calm_voice_id:
+        app.personality_listeners.append(switch_voice)
+
     pipeline = Pipeline([audio.input(), stt, brain, tts, audio.output()])
     worker = PipelineWorker(
         pipeline,
@@ -132,6 +145,7 @@ async def run_voice(config: Config) -> None:
     @worker.event_handler("on_pipeline_started")
     async def _start_brief(worker, frame):
         brief_task.append(asyncio.create_task(brief.run()))
+        brief_task.append(asyncio.create_task(app.mood.run()))
 
     brief_task: list[asyncio.Task] = []
     try:

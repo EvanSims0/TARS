@@ -52,6 +52,7 @@ async def _chat(config) -> None:
         print(f"\n[TARS] {text}\n> ", end="", flush=True)
 
     app = build_app(config, announce)
+    mood_task = asyncio.create_task(app.mood.run())  # discretion, stress and the black-hole scan
     print("Type to talk to TARS (Ctrl+C to quit). Replies are what TARS would say aloud.")
     loop = asyncio.get_running_loop()
     while True:

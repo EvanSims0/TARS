@@ -91,6 +91,37 @@ def free_slots(busy: list[dict[str, str]], start: datetime, end: datetime, minut
     return slots
 
 
+def meeting_tally(events: list[dict[str, Any]], start: datetime, end: datetime) -> str:
+    """Hours spent in meetings over a window, with recurring ones projected over a year."""
+    def hours(ev: dict[str, Any]) -> float:
+        s, e = ev.get("start", {}).get("dateTime"), ev.get("end", {}).get("dateTime")
+        if not s or not e:
+            return 0.0
+        return (datetime.fromisoformat(e.replace("Z", "+00:00"))
+                - datetime.fromisoformat(s.replace("Z", "+00:00"))).total_seconds() / 3600
+
+    timed = [ev for ev in events if hours(ev) > 0]
+    meetings = [ev for ev in timed if _has_guests(ev)] or timed  # personal calendars have no guests
+    if not meetings:
+        return "No meetings in that window."
+    days = max((end - start).total_seconds() / 86400, 1)
+    total = sum(hours(ev) for ev in meetings)
+    series: dict[str, list[dict[str, Any]]] = {}
+    for ev in meetings:
+        series.setdefault(ev.get("recurringEventId") or ev["id"], []).append(ev)
+    recurring = sorted(
+        ((evs[0].get("summary", "(no title)"), sum(hours(e) for e in evs), len(evs))
+         for key, evs in series.items() if evs[0].get("recurringEventId")),
+        key=lambda r: -r[1],
+    )
+    lines = [f"{len(meetings)} meetings, {total:.1f} hours over {days:.0f} days "
+             f"({total / days * 7:.1f} hours a week, about {total / days * 365 / 24:.0f} full days a year)."]
+    for title, h, n in recurring[:5]:
+        per_year = h / days * 365
+        lines.append(f"Recurring '{title}': {h:.1f} h in this window ({n}x), about {per_year:.0f} hours a year.")
+    return "\n".join(lines)
+
+
 def build_tools(cal: Calendar) -> list[Tool]:
     async def list_events(args: dict[str, Any]) -> str:
         items = await cal.events(args["start"], args["end"], args.get("query"))
@@ -130,6 +161,10 @@ def build_tools(cal: Calendar) -> list[Tool]:
             return "Moved it back."
 
         return ActionResult(f"Moved: {_describe(updated)}", undo=undo, undo_label=f"move '{ev.get('summary')}'")
+
+    async def meeting_time(args: dict[str, Any]) -> str:
+        start, end = datetime.fromisoformat(args["start"]), datetime.fromisoformat(args["end"])
+        return meeting_tally(await cal.events(args["start"], args["end"]), start, end)
 
     async def send_invite(args: dict[str, Any]) -> str:
         event = {
@@ -171,12 +206,18 @@ def build_tools(cal: Calendar) -> list[Tool]:
         Tool("find_free_time", "Find free gaps of at least `minutes` between two ISO times.",
              schema({**times, "minutes": {"type": "integer"}}, ["start", "end", "minutes"]),
              Tier.READ, find_free_time, cue="Checking your calendar.", service="Google Calendar"),
+        Tool("meeting_time", "Tally hours spent in meetings between two times, including what each recurring "
+             "meeting costs per year (the 'time dilation' report). Use the past 7 or 30 days unless asked.",
+             schema({**times}, ["start", "end"]), Tier.READ, meeting_time, cue="Checking your calendar.",
+             service="Google Calendar"),
         Tool("add_event", "Add an event or hold to the user's own calendar, with no other guests.",
              schema({"title": {"type": "string"}, **times, "location": {"type": "string"}}, ["title", "start", "end"]),
-             Tier.CREATE_FOR_YOU, add_event, service="Google Calendar"),
+             Tier.CREATE_FOR_YOU, add_event, service="Google Calendar",
+             read_back=lambda a: f"Add '{a['title']}' to your calendar, {a['start']} to {a['end']}."),
         Tool("move_event", "Move one of the user's own events (no other guests) to a new time.",
              schema({"event_id": {"type": "string"}, **times}, ["event_id", "start", "end"]),
-             Tier.CREATE_FOR_YOU, move_event, service="Google Calendar"),
+             Tier.CREATE_FOR_YOU, move_event, service="Google Calendar",
+             read_back=lambda a: f"Move that event to {a['start']} until {a['end']}."),
         Tool("send_invite", "Create an event and invite other people by email. They get notified.",
              schema({"title": {"type": "string"}, **times, "location": {"type": "string"},
                      "guests": {"type": "array", "items": {"type": "string"}}}, ["title", "start", "end", "guests"]),

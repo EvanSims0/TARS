@@ -17,7 +17,7 @@ Version 1 runs entirely on your PC, with your phone as a remote; the stack below
 | Decision | Choice | Why |
 |---|---|---|
 | Name and wake phrase | TARS; push-to-talk by default, with an optional "Hey TARS" wake word | Your pick; a two-part phrase triggers by accident far less than a single short word. Custom wake phrase trained with livekit-wakeword |
-| Personality | Dry wit, one-sentence replies by default | Helpful first, with the occasional deadpan line; say "more" for detail. An original personality, not an imitation of the film character |
+| Personality | Dry wit, one-sentence replies by default, tuned by sliders: humor (default 70%), bluntness (tact only, never accuracy) and trust (below 80%, it asks before changing your accounts); a calm, joke-free mode called Vela | Helpful first, with the occasional deadpan line; say "more" for detail. Humor drops to 0 while you present and to 30% when you're swamped, and never appears in confirmations, errors, security, money or health matters. An original personality with original lines, not an imitation of the film character |
 | First jobs | Email triage, calendar, reminders and lists | Your top three; these lead Phase 1 |
 | Where it runs | Your Windows PC, started at login by Task Scheduler | Push-to-talk hotkey through your Bluetooth headset, so its mic isn't held open in low-quality call mode all day; Windows wakes the PC for scheduled briefs and alerts; a logon task rather than a Windows service, so it can reach your audio |
 | Build approach | Standalone Python app on Pipecat, built and tested by Claude on your PC; you try each phase and give feedback | Runs the voice pipeline locally with no server; LiveKit Agents needs one outside development (Pipecat) |

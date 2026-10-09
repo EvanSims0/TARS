@@ -10,6 +10,7 @@ from typing import Any
 
 from .actions import ActionResult, Tier, Tool, ToolError, schema
 from .memory import HEADINGS, Vault
+from .personality import CALM_NAME, Personality, PersonalitySettings
 from .transcripts import Transcripts
 
 Announce = Callable[[str], Awaitable[None]]
@@ -70,6 +71,52 @@ def _fmt(seconds: float) -> str:
     parts = [f"{h} hour{'s' * (h != 1)}" if h else "", f"{m} minute{'s' * (m != 1)}" if m else "",
              f"{s} second{'s' * (s != 1)}" if s and not h else ""]
     return " ".join(p for p in parts if p) or "0 seconds"
+
+
+PersonalityListener = Callable[[Personality], Awaitable[None]]
+
+
+def personality_tool(personality: Personality, listeners: list[PersonalityListener] | None = None) -> Tool:
+    listeners = listeners if listeners is not None else []
+
+    def tier_for(args: dict[str, Any]) -> Tier:
+        # Raising trust means fewer confirmations, so it needs the user's own yes.
+        if args.get("trust") is not None and args["trust"] > personality.settings.trust:
+            return Tier.CONFIRM
+        return Tier.CREATE_FOR_YOU
+
+    def read_back(args: dict[str, Any]) -> str:
+        return f"Raise trust to {args['trust']}%, so I stop asking before changing your lists, calendar and email filing."
+
+    async def notify() -> None:
+        for listener in listeners:
+            await listener(personality)
+
+    async def set_personality(args: dict[str, Any]) -> ActionResult:
+        before = PersonalitySettings(**vars(personality.settings))
+        mode = args.get("mode")
+        summary = personality.update(
+            humor=args.get("humor"), bluntness=args.get("bluntness"), trust=args.get("trust"),
+            calm=None if mode is None else mode == "calm",
+        )
+        await notify()
+
+        async def restore() -> str:
+            personality.restore(before)
+            await notify()
+            return "Settings put back."
+
+        return ActionResult(summary, undo=restore, undo_label="personality change")
+
+    return Tool(
+        "set_personality",
+        f"Change TARS's humor, bluntness or trust (0-100), or switch mode: 'calm' for {CALM_NAME}, the "
+        "joke-free assistant, or 'tars' for TARS. Lower trust means TARS asks before changing the user's "
+        "accounts.",
+        schema({"humor": {"type": "integer"}, "bluntness": {"type": "integer"}, "trust": {"type": "integer"},
+                "mode": {"type": "string", "enum": ["tars", "calm"]}}),
+        Tier.CREATE_FOR_YOU, set_personality, read_back=read_back, tier_for=tier_for,
+    )
 
 
 def build_tools(vault: Vault, transcripts: Transcripts, timers: Timers, undo: UndoStack) -> list[Tool]:
