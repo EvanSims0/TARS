@@ -19,7 +19,7 @@ mute_key = "<ctrl>+<alt>+m"
 follow_up_seconds = 8.0
 stt_model = "flux-general-en"
 tts_model = "eleven_flash_v2_5"
-tts_voice_id = ""          # an original ElevenLabs voice you choose
+tts_voice_id = "CGldoNGr4XAY3PAcEM3x"   # the original TARS voice designed in ElevenLabs
 # input_device_index = 1   # leave unset for the Windows default devices
 # output_device_index = 3
 
