@@ -127,6 +127,30 @@ def cmd_probe(args, config) -> None:
     asyncio.run(_probe(config, args.n))
 
 
+def cmd_check(args, config) -> None:
+    from .check import run_checks
+
+    print("Checking each account with a read-only call (nothing is changed or sent)...")
+    results = asyncio.run(run_checks(config))
+    print("\n".join(r.line() for r in results))
+    failed = [r.name for r in results if r.ok is False]
+    if failed:
+        sys.exit(f"\n{len(failed)} to fix before the test script: {', '.join(failed)}.")
+    print("\nReady for the Gate 1 test script (docs/TEST_SCRIPT.md).")
+
+
+def cmd_devices(args, config) -> None:
+    from .check import audio_devices
+
+    try:
+        lines = audio_devices()
+    except ImportError:
+        sys.exit('Audio needs the voice extras: pip install -e ".[voice]"')
+    print("Index  Kind   Name")
+    print("\n".join(lines) or "No audio devices found.")
+    print("\nTo pick the headset, set voice.input_device_index and voice.output_device_index in config.toml.")
+
+
 def cmd_backup(args, config) -> None:
     from .memory import Vault
 
@@ -151,6 +175,8 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("probe", help="measure Claude's time to first word")
     p.add_argument("-n", type=int, default=10)
     p.set_defaults(fn=cmd_probe)
+    sub.add_parser("check", help="test every account and setting with read-only calls").set_defaults(fn=cmd_check)
+    sub.add_parser("devices", help="list audio devices, to pick the headset").set_defaults(fn=cmd_devices)
     sub.add_parser("backup", help="copy the memory vault to the backup folder").set_defaults(fn=cmd_backup)
 
     args = parser.parse_args(argv)

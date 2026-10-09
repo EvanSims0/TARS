@@ -67,3 +67,18 @@ async def test_brain_streams_phrases_and_stop_interrupts(make_agent):
     assert "".join(phrases).split() == "Your dentist is at three, and traffic looks light. Leave by two.".split()
     assert InterruptionFrame in kinds  # "stop" never reaches the model and halts speech
     assert agent.ledger.today_total() > 0  # Claude and TTS spend recorded
+
+
+def test_log_file_is_written_under_data(tmp_path):
+    from loguru import logger
+
+    from tars.config import Config
+    from tars.voice.run import log_to_file
+
+    config = Config(home=tmp_path)
+    sink = log_to_file(config)
+    logger.info("hello log")
+    logger.complete()
+    logger.remove(sink)
+    logs = list((tmp_path / "data" / "logs").glob("tars-*.log"))
+    assert logs and "hello log" in logs[0].read_text(encoding="utf-8")

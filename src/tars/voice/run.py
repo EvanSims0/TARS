@@ -91,6 +91,15 @@ def build_voice(config: Config, app, show_state: Callable[[str], None], deepgram
     return worker, brain, mic
 
 
+def log_to_file(config: Config) -> int:
+    """Keep a daily log for reporting problems; it holds what was said, so it's kept as long as transcripts."""
+    return logger.add(
+        config.data_dir / "logs" / "tars-{time:YYYY-MM-DD}.log",
+        rotation="00:00", retention=f"{config.privacy.transcript_days} days",
+        level="INFO", encoding="utf-8", enqueue=True,
+    )
+
+
 def show_state(state: str) -> None:
     # The on-screen indicator; the tray icon and overlay arrive in a later phase.
     print(f"\r[TARS] {STATE_LABELS.get(state, state):<45}", end="", flush=True)
@@ -102,6 +111,7 @@ async def run_voice(config: Config) -> None:
     if not config.voice.tts_voice_id:
         raise SystemExit("Pick an ElevenLabs voice and set voice.tts_voice_id in config.toml.")
 
+    log_to_file(config)
     loop = asyncio.get_running_loop()
     brain_ref: dict[str, TarsBrain] = {}
 
