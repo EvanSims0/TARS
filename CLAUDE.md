@@ -54,6 +54,11 @@ runs on Windows and Linux. CI also checks that the base install (no `voice` extr
 - **Voice** (`voice/`): `TarsBrain` is the Pipecat processor between STT and TTS; `PhraseChunker`
   feeds speakable phrases to TTS early; `PushToTalkInput` opens the mic only on the hotkey and
   closes it after `follow_up_seconds` so a Bluetooth headset stays in high-quality mode.
+- **Memory map** (`memory_map.py` + `memory_map.html`): a stdlib HTTP server on 127.0.0.1 (random
+  port, started on first use) serving one self-contained page and a JSON API. Every request needs
+  the random token and a loopback Host header. The page polls `/api/memory` and can only forget
+  facts (`Vault.remove_line`), never add or edit them. `Vault` holds a lock because this server
+  thread writes to it too.
 - **State on disk** lives under `%APPDATA%\TARS` (or `TARS_HOME`; `~/.tars` elsewhere): config.toml,
   the Obsidian memory vault, transcripts and logs (kept `privacy.transcript_days`), spend and
   per-turn timing logs. Keys live in the OS credential store via `secrets` (env vars override).

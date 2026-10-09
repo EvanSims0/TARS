@@ -12,9 +12,10 @@ from .actions import ToolRegistry
 from .agent import Agent, AnthropicBackend, Backend
 from .config import Config
 from .gate import ConfirmationGate
-from .local_tools import PersonalityListener, Timers, UndoStack, personality_tool
+from .local_tools import PersonalityListener, Timers, UndoStack, memory_map_tool, personality_tool
 from .local_tools import build_tools as local_tools
 from .memory import Vault
+from .memory_map import MemoryMap
 from .mood import MoodMonitor
 from .personality import Personality, PersonalitySettings
 from .spend import SpendLedger, TurnLog
@@ -32,6 +33,7 @@ class App:
     turn_log: TurnLog
     personality: Personality
     mood: MoodMonitor
+    memory_map: MemoryMap
     # Called after a personality change, e.g. to switch the voice for the calm mode.
     personality_listeners: list[PersonalityListener] = field(default_factory=list)
     connected: dict[str, bool] = field(default_factory=dict)
@@ -53,6 +55,8 @@ def build_app(
     timers = Timers(announce)
     registry = ToolRegistry()
     registry.add(*local_tools(vault, transcripts, timers, undo))
+    memory_map = MemoryMap(vault)  # started the first time it's opened
+    registry.add(memory_map_tool(memory_map.open))
     defaults = config.personality
     personality = Personality.load(
         data / "personality.json",
@@ -108,7 +112,8 @@ def build_app(
         instructions=config.instructions(),
         personality=personality,
     )
-    return App(config, agent, timers, vault, transcripts, ledger, turn_log, personality, mood, listeners, connected)
+    return App(config, agent, timers, vault, transcripts, ledger, turn_log, personality, mood, memory_map,
+               listeners, connected)
 
 
 def status_lines(app: App) -> list[str]:

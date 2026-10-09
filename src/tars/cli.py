@@ -151,6 +151,22 @@ def cmd_devices(args, config) -> None:
     print("\nTo pick the headset, set voice.input_device_index and voice.output_device_index in config.toml.")
 
 
+def cmd_memory(args, config) -> None:
+    from .memory import Vault
+    from .memory_map import MemoryMap
+
+    vault = Vault(config.vault)
+    vault.ensure()
+    memory_map = MemoryMap(vault)
+    url = memory_map.open() if not args.no_browser else memory_map.start()
+    print(f"Memory map: {url}\nIt updates as TARS learns things. Press Ctrl+C to close it.")
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        memory_map.stop()
+
+
 def cmd_backup(args, config) -> None:
     from .memory import Vault
 
@@ -177,6 +193,9 @@ def main(argv: list[str] | None = None) -> None:
     p.set_defaults(fn=cmd_probe)
     sub.add_parser("check", help="test every account and setting with read-only calls").set_defaults(fn=cmd_check)
     sub.add_parser("devices", help="list audio devices, to pick the headset").set_defaults(fn=cmd_devices)
+    p = sub.add_parser("memory", help="browse everything TARS remembers, as a map")
+    p.add_argument("--no-browser", action="store_true", help="print the address instead of opening it")
+    p.set_defaults(fn=cmd_memory)
     sub.add_parser("backup", help="copy the memory vault to the backup folder").set_defaults(fn=cmd_backup)
 
     args = parser.parse_args(argv)

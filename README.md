@@ -45,6 +45,7 @@ push-to-talk mic ─► Deepgram Flux ─► TarsBrain ─► ElevenLabs Flash v
 | Morning brief at 9am, or as soon as the PC is on after 9 | |
 | Spend cap, per-turn response time and cost log, `tars status` | |
 | `tars check` (read-only test of every account), `tars devices`, daily log file | |
+| Memory map: `tars memory` or "show me my memory" opens everything TARS remembers as a map you can search and browse | |
 | CI on Windows and Linux, locked dependencies | |
 | Personality sliders (humor, bluntness, trust), Vela calm mode, discretion and stress dial-down, meeting tally | |
 

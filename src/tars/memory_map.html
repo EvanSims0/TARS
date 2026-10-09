@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TARS memory</title>
+<style>
+  :root {
+    --bg: #36454f;          /* charcoal */
+    --surface: #2e3b44;
+    --surface-2: #26323a;
+    --text: #ffffff;
+    --muted: #d3d3d3;
+    --line: #708090;        /* slate: borders and links only, never text */
+    --font: "DejaVu Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.45 var(--font);
+         display: grid; grid-template-rows: auto auto 1fr; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+           padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: .02em; }
+  #count { color: var(--muted); font-size: 13px; }
+  .spacer { flex: 1; }
+  input[type=search] { background: var(--surface-2); color: var(--text); border: 1px solid var(--line);
+          border-radius: 6px; padding: 7px 10px; font: inherit; width: min(320px, 100%); }
+  input::placeholder { color: var(--muted); opacity: .8; }
+  button, a.button { background: transparent; color: var(--text); border: 1px solid var(--line);
+          border-radius: 6px; padding: 6px 11px; font: inherit; font-size: 14px; cursor: pointer;
+          text-decoration: none; }
+  button:hover, a.button:hover { background: var(--surface); }
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  #crumbs { padding: 8px 16px 0; color: var(--muted); font-size: 13px; display: flex; gap: 6px;
+            flex-wrap: wrap; align-items: center; min-height: 28px; }
+  #crumbs button { border: none; padding: 2px 4px; color: var(--text); text-decoration: underline;
+                   text-underline-offset: 3px; font-size: 13px; }
+  main { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
+  #mapwrap { position: relative; min-height: 0; }
+  svg { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  svg.dragging { cursor: grabbing; }
+  aside { border-left: 1px solid var(--line); padding: 16px; overflow: auto; background: var(--surface); }
+  aside h2 { font-size: 15px; margin: 0 0 10px; font-weight: 600; }
+  aside h3 { font-size: 12px; margin: 18px 0 8px; color: var(--muted); font-weight: 600;
+             text-transform: uppercase; letter-spacing: .06em; }
+  aside p { margin: 0 0 10px; color: var(--muted); }
+  ul.list { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+  ul.list button { width: 100%; text-align: left; border-color: transparent; background: var(--surface-2);
+                   padding: 8px 10px; display: flex; justify-content: space-between; gap: 10px; }
+  ul.list button:hover { border-color: var(--line); }
+  .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .fact-text { font-size: 18px; line-height: 1.4; margin: 4px 0 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border-radius: 999px; padding: 3px 10px; font-size: 13px; }
+  .chip[aria-pressed=true] { background: var(--text); color: var(--bg); border-color: var(--text); }
+  #names { padding: 6px 16px 0; }
+  .danger { margin-top: 18px; }
+  .note { background: var(--surface-2); border-radius: 6px; padding: 8px 10px; }
+  .note strong { display: block; }
+  .note span { color: var(--muted); font-size: 13px; }
+  #toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: var(--text);
+           color: var(--bg); padding: 8px 14px; border-radius: 6px; font-size: 14px; opacity: 0;
+           pointer-events: none; transition: opacity .2s; }
+  #toast.show { opacity: 1; }
+  .hint { position: absolute; left: 8px; bottom: 8px; color: var(--muted); font-size: 12px;
+          background: var(--bg); padding: 2px 6px; border-radius: 6px; }
+  kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font: 12px var(--font); }
+  /* map */
+  .edge { stroke: var(--line); stroke-width: 1.2; }
+  .link { stroke: var(--text); stroke-width: 1.4; stroke-dasharray: 4 4; opacity: .8; }
+  .node circle { fill: var(--surface-2); stroke: var(--muted); stroke-width: 1.5; }
+  .node text { fill: var(--text); font-size: 14px; user-select: none; }
+  .node .sub { fill: var(--muted); font-size: 11px; }
+  .node { cursor: pointer; transition: opacity .2s; }
+  .node:hover circle, .node:focus-visible circle { stroke: var(--text); stroke-width: 3; }
+  .node:focus { outline: none; }
+  .node.root circle { fill: var(--text); stroke: var(--text); }
+  .node.root text { fill: var(--bg); font-weight: 600; }
+  .node.active circle { fill: var(--text); stroke: var(--text); }
+  .node.dim { opacity: .25; }
+  .edge.dim { opacity: .2; }
+  .node.faint, .edge.faint { opacity: .07; pointer-events: none; }
+  .empty { fill: var(--muted); font-size: 15px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 55vh auto; }
+    aside { border-left: none; border-top: 1px solid var(--line); }
+    .hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>TARS memory</h1>
+  <span id="count"></span>
+  <span class="spacer"></span>
+  <input id="search" type="search" placeholder="Search memory  ( / )" aria-label="Search memory">
+  <button id="whole" type="button">Whole map</button>
+  <a id="obsidian" class="button" href="#">Open in Obsidian</a>
+</header>
+<div>
+  <nav id="crumbs" aria-label="Where you are"></nav>
+  <div id="names" class="chips" role="toolbar" aria-label="People and places mentioned more than once"></div>
+</div>
+<main>
+  <div id="mapwrap">
+    <svg id="map" role="group" aria-label="Memory map"></svg>
+    <div class="hint"><kbd>Tab</kbd> or arrows to move · <kbd>Enter</kbd> to open · <kbd>Esc</kbd> back ·
+      drag to pan · scroll to zoom</div>
+  </div>
+  <aside id="panel" aria-live="polite"></aside>
+</main>
+<div id="toast" role="status"></div>
+<script>
+"use strict";
+const TOKEN = "__TOKEN__";
+const NS = "http://www.w3.org/2000/svg";
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = (id) => document.getElementById(id);
+const svg = $("map"), panel = $("panel");
+
+let data = null, lastJson = "";
+const state = { focus: null, selected: null, query: "", name: null };
+let layout = { nodes: [], byId: {}, catPos: {} };
+let view = { x: -400, y: -300, w: 800, h: 600 };
+
+// ---------- data ----------
+async function load() {
+  try {
+    const res = await fetch("/api/memory", { headers: { "X-Tars-Token": TOKEN }, cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    const text = await res.text();
+    if (text === lastJson) return;
+    const first = data === null;
+    lastJson = text;
+    data = JSON.parse(text);
+    if (state.focus && !data.categories.some(c => c.name === state.focus)) state.focus = null;
+    if (state.selected && !findFact(state.selected)) state.selected = null;
+    if (state.name && !data.mentions[state.name]) state.name = null;
+    buildLayout();
+    render(first ? "fit" : null);
+  } catch (e) {
+    panel.innerHTML = "";
+    panel.append(el("h2", {}, "Can't reach TARS"),
+      el("p", {}, "Run tars memory again, or say “show me my memory”, to reopen the map."));
+  }
+}
+
+function findFact(id) {
+  for (const c of data.categories) for (const f of c.facts) if (f.id === id) return { ...f, category: c.name };
+  return null;
+}
+
+// ---------- layout ----------
+function buildLayout() {
+  const nodes = [], byId = {}, catPos = {};
+  const cats = data.categories;
+  const n = Math.max(cats.length, 1);
+  const R = cats.length > 1 ? 190 : 0;
+  nodes.push({ kind: "root", id: "root", x: 0, y: 0, r: 34, label: "Memory" });
+  cats.forEach((c, i) => {
+    const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+    const cx = Math.cos(a) * R, cy = Math.sin(a) * R;
+    const node = { kind: "cat", id: "cat:" + c.name, name: c.name, x: cx, y: cy, a,
+                   r: 20 + Math.min(c.facts.length, 12) * 1.5, label: c.name, count: c.facts.length };
+    nodes.push(node); catPos[c.name] = node;
+    // Facts fan out away from the centre, in rings when there are many.
+    const span = cats.length > 1 ? Math.min(Math.PI * 2 / n * 0.85, Math.PI * 0.9) : Math.PI * 2;
+    let placed = 0, ring = 0;
+    while (placed < c.facts.length) {
+      const radius = 72 + ring * 46;
+      const capacity = Math.max(3, Math.floor((span * radius) / 24));
+      const inRing = Math.min(capacity, c.facts.length - placed);
+      for (let k = 0; k < inRing; k++) {
+        const t = inRing === 1 ? 0.5 : k / (inRing - 1);
+        const fa = (cats.length > 1 ? a : -Math.PI / 2) + (span >= Math.PI * 2 ? t * Math.PI * 2 * (1 - 1 / inRing) : (t - 0.5) * span);
+        const f = c.facts[placed + k];
+        const fn = { kind: "fact", id: f.id, fact: f, cat: c.name, a: fa, r: 7,
+                     ox: cx + Math.cos(fa) * radius, oy: cy + Math.sin(fa) * radius };
+        nodes.push(fn); byId[f.id] = fn;
+      }
+      placed += inRing; ring++;
+    }
+    // Zoomed in, the branch's facts line up in a column beside it so every label is readable.
+    const side = Math.cos(a) >= -0.01 ? 1 : -1, gap = 34;
+    c.facts.forEach((f, k) => {
+      const fn = byId[f.id];
+      fn.side = side;
+      fn.fx = cx + side * (node.r + 110);
+      fn.fy = cy + (k - (c.facts.length - 1) / 2) * gap;
+    });
+  });
+  layout = { nodes, byId, catPos };
+  placeFacts();
+}
+
+function placeFacts() {
+  for (const n of layout.nodes) if (n.kind === "fact") {
+    const zoomed = state.focus === n.cat;
+    n.x = zoomed ? n.fx : n.ox; n.y = zoomed ? n.fy : n.oy; n.zoomed = zoomed;
+  }
+}
+
+function bounds(nodes, pad) {
+  if (!nodes.length) return { x: -300, y: -200, w: 600, h: 400 };
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const n of nodes) { x1 = Math.min(x1, n.x - n.r); y1 = Math.min(y1, n.y - n.r);
+                           x2 = Math.max(x2, n.x + n.r); y2 = Math.max(y2, n.y + n.r); }
+  return { x: x1 - pad, y: y1 - pad, w: x2 - x1 + pad * 2, h: y2 - y1 + pad * 2 };
+}
+
+function targetView() {
+  if (state.focus) {
+    const own = layout.nodes.filter(n => n.id === "cat:" + state.focus || n.cat === state.focus);
+    const b = bounds(own, 60);
+    // Leave room for the labels on the column's side.
+    const side = (own.find(n => n.kind === "fact") || {}).side || 1;
+    const labels = 300;
+    return { x: side > 0 ? b.x : b.x - labels, y: b.y, w: b.w + labels, h: b.h };
+  }
+  const b = bounds(layout.nodes, 40);
+  // Search and name highlights show labels, which need room at the sides.
+  if (state.query.trim() || state.name) {
+    const k = 1.3;
+    b.x -= b.w * (k - 1) / 2; b.y -= b.h * (k - 1) / 2; b.w *= k; b.h *= k;
+  }
+  return b;
+}
+
+function fitAspect(v) {
+  const box = svg.getBoundingClientRect();
+  const ratio = (box.width || 800) / (box.height || 600);
+  let { x, y, w, h } = v;
+  if (w / h < ratio) { const nw = h * ratio; x -= (nw - w) / 2; w = nw; }
+  else { const nh = w / ratio; y -= (nh - h) / 2; h = nh; }
+  return { x, y, w, h };
+}
+
+let anim = 0;
+function moveTo(target) {
+  target = fitAspect(target);
+  cancelAnimationFrame(anim);
+  if (reduceMotion) { view = target; applyView(); return; }
+  const from = { ...view }, start = performance.now(), dur = 380;
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / dur), e = 1 - Math.pow(1 - t, 3);
+    for (const k of ["x", "y", "w", "h"]) view[k] = from[k] + (target[k] - from[k]) * e;
+    applyView();
+    if (t < 1) anim = requestAnimationFrame(step);
+  };
+  anim = requestAnimationFrame(step);
+}
+function applyView() { svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`); }
+
+// ---------- rendering ----------
+function el(tag, attrs = {}, ...kids) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith("on")) node.addEventListener(k.slice(2), v); else node.setAttribute(k, v);
+  }
+  for (const kid of kids) node.append(kid);
+  return node;
+}
+function s(tag, attrs = {}, text) {
+  const node = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+const short = (t, n = 34) => t.length > n ? t.slice(0, n - 1).trimEnd() + "…" : t;
+
+function matches(f) {
+  const q = state.query.trim().toLowerCase();
+  return !q || f.text.toLowerCase().includes(q);
+}
+function highlighted() {
+  if (state.name) return new Set(data.mentions[state.name] || []);
+  if (state.query.trim()) {
+    const ids = new Set();
+    for (const c of data.categories) for (const f of c.facts) if (matches(f)) ids.add(f.id);
+    return ids;
+  }
+  return null;
+}
+
+function render(fit) {
+  const active = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.key : null;
+  svg.replaceChildren();
+  $("count").textContent = `${data.count} fact${data.count === 1 ? "" : "s"}`;
+  $("obsidian").href = data.obsidian;
+
+  if (!data.count) {
+    svg.append(s("text", { x: 0, y: 0, "text-anchor": "middle", class: "empty" },
+      "Nothing remembered yet."));
+    view = fitAspect({ x: -300, y: -150, w: 600, h: 300 }); applyView();
+    renderPanel(); renderCrumbs(); renderNames();
+    return;
+  }
+
+  const hi = highlighted();
+  const edges = s("g"), links = s("g"), nodesG = s("g");
+  svg.append(edges, links, nodesG);
+  const root = layout.nodes[0];
+  for (const n of layout.nodes) {
+    if (n.kind === "cat") {
+      const faint = state.focus && state.focus !== n.name;
+      edges.append(s("line", { x1: root.x, y1: root.y, x2: n.x, y2: n.y, class: "edge" + (faint ? " faint" : "") }));
+    } else if (n.kind === "fact") {
+      const c = layout.catPos[n.cat];
+      const faint = state.focus && state.focus !== n.cat && !(hi && hi.has(n.id));
+      const dim = !faint && hi && !hi.has(n.id);
+      const mx = (c.x + n.x) / 2;
+      const d = n.zoomed ? `M${c.x},${c.y} C${mx},${c.y} ${mx},${n.y} ${n.x},${n.y}` : `M${c.x},${c.y} L${n.x},${n.y}`;
+      edges.append(s("path", { d, fill: "none", class: "edge" + (faint ? " faint" : dim ? " dim" : "") }));
+    }
+  }
+  // A selected name links every fact that mentions it, across categories.
+  if (state.name) {
+    const ids = data.mentions[state.name] || [];
+    for (let i = 1; i < ids.length; i++) {
+      const a = layout.byId[ids[i - 1]], b = layout.byId[ids[i]];
+      if (a && b) links.append(s("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: "link" }));
+    }
+  }
+
+  for (const n of layout.nodes) {
+    const g = s("g", { class: "node " + n.kind, tabindex: "0", role: "button", "data-key": n.id,
+                       transform: `translate(${n.x} ${n.y})` });
+    if (n.kind === "root") {
+      g.setAttribute("aria-label", `Whole map, ${data.count} facts`);
+      g.append(s("circle", { r: n.r }), s("text", { "text-anchor": "middle", dy: "0.35em" }, n.label));
+      g.addEventListener("click", () => go({ focus: null, selected: null, name: null }));
+    } else if (n.kind === "cat") {
+      if (state.focus && state.focus !== n.name) g.classList.add("faint");
+      else if (hi && !data.categories.find(c => c.name === n.name).facts.some(f => hi.has(f.id))) g.classList.add("dim");
+      if (state.focus === n.name) g.classList.add("active");
+      g.setAttribute("aria-label", `${n.name}, ${n.count} fact${n.count === 1 ? "" : "s"}`);
+      g.append(s("circle", { r: n.r }));
+      const below = Math.sin(n.a) > 0.3, above = Math.sin(n.a) < -0.3;
+      const ty = below ? n.r + 18 : above ? -n.r - 18 : 4;
+      const anchor = below || above ? "middle" : Math.cos(n.a) >= 0 ? "start" : "end";
+      const tx = below || above ? 0 : Math.cos(n.a) >= 0 ? n.r + 8 : -n.r - 8;
+      const label = s("text", { x: tx, y: ty, "text-anchor": anchor }, n.name);
+      label.append(s("tspan", { class: "sub", dx: 6 }, String(n.count)));
+      g.append(label);
+      g.addEventListener("click", () => go({ focus: n.name, selected: null }));
+    } else {
+      const f = n.fact;
+      const faint = state.focus && state.focus !== n.cat && !(hi && hi.has(n.id));
+      const dim = !faint && hi && !hi.has(n.id);
+      if (faint) g.classList.add("faint"); else if (dim) g.classList.add("dim");
+      if (state.selected === n.id) g.classList.add("active");
+      g.setAttribute("aria-label", `${f.text}. In ${n.cat}.`);
+      g.append(s("circle", { r: state.selected === n.id ? 9 : n.r }));
+      const showLabel = n.zoomed || (hi && hi.has(n.id));
+      if (showLabel) {
+        const right = n.zoomed ? n.side > 0 : Math.cos(n.a) >= 0;
+        g.append(s("text", { x: right ? 13 : -13, y: 4, "text-anchor": right ? "start" : "end" },
+                   short(f.text, n.zoomed ? 44 : 30)));
+      } else {
+        g.append(s("title", {}, f.text));
+      }
+      g.addEventListener("click", () => go({ focus: n.cat, selected: n.id }));
+    }
+    g.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); g.dispatchEvent(new MouseEvent("click")); }
+    });
+    nodesG.append(g);
+  }
+  if (fit) moveTo(targetView()); else applyView();
+  renderPanel(); renderCrumbs(); renderNames();
+  if (active) { const again = svg.querySelector(`[data-key="${CSS.escape(active)}"]`); if (again) again.focus(); }
+}
+
+function go(change, fit = true) {
+  Object.assign(state, change);
+  placeFacts();
+  render(fit && ("focus" in change));
+  if (change.selected) { const n = svg.querySelector(`[data-key="${CSS.escape(change.selected)}"]`); if (n) n.focus(); }
+  else if ("focus" in change) {
+    const key = change.focus ? "cat:" + change.focus : "root";
+    const n = svg.querySelector(`[data-key="${CSS.escape(key)}"]`); if (n) n.focus();
+  }
+}
+
+function renderCrumbs() {
+  const c = $("crumbs"); c.replaceChildren();
+  const add = (label, change) => c.append(change ? el("button", { type: "button", onclick: () => go(change) }, label)
+                                                 : el("span", { "aria-current": "page" }, label));
+  const sep = () => c.append(el("span", { "aria-hidden": "true" }, "›"));
+  add("Memory", state.focus || state.selected ? { focus: null, selected: null } : null);
+  if (state.focus) { sep(); add(state.focus, state.selected ? { selected: null } : null); }
+  if (state.selected) { const f = findFact(state.selected); if (f) { sep(); add(short(f.text, 40)); } }
+  if (state.name) { sep(); c.append(el("span", {}, `mentions of ${state.name}`)); }
+}
+
+function renderNames() {
+  const box = $("names"); box.replaceChildren();
+  for (const [name, ids] of Object.entries(data.mentions)) {
+    box.append(el("button", { type: "button", class: "chip", "aria-pressed": String(state.name === name),
+      onclick: () => { go({ name: state.name === name ? null : name, selected: null }, false);
+                       if (!state.focus) moveTo(targetView()); } },
+      `${name} · ${ids.length}`));
+  }
+}
+
+function factButton(f, showCat) {
+  return el("li", {}, el("button", { type: "button", onclick: () => go({ focus: f.category, selected: f.id }) },
+    el("span", {}, f.text), el("span", { class: "meta" }, showCat ? f.category : (f.saved || ""))));
+}
+
+function renderPanel() {
+  panel.replaceChildren();
+  if (!data.count && !data.notes.length) {
+    panel.append(el("h2", {}, "Nothing remembered yet"),
+      el("p", {}, "Tell TARS something lasting, like “My sister Jess’s birthday is March 3rd”. " +
+                  "It says “noted” and the fact appears here within a few seconds."));
+    return;
+  }
+  const all = data.categories.flatMap(c => c.facts.map(f => ({ ...f, category: c.name })));
+
+  if (state.selected) {
+    const f = findFact(state.selected);
+    panel.append(el("h2", {}, f.category), el("div", { class: "fact-text" }, f.text),
+                 el("p", {}, f.saved ? `Saved ${f.saved}` : "Added by hand"));
+    const names = Object.keys(data.mentions).filter(n => (data.mentions[n] || []).includes(f.id));
+    if (names.length) {
+      panel.append(el("h3", {}, "Also mentioned in other facts"));
+      const chips = el("div", { class: "chips" });
+      for (const n of names) chips.append(el("button", { type: "button", class: "chip",
+        onclick: () => go({ name: n, selected: null }, false) }, n));
+      panel.append(chips);
+    }
+    const siblings = all.filter(x => x.category === f.category && x.id !== f.id);
+    if (siblings.length) {
+      panel.append(el("h3", {}, `More in ${f.category}`));
+      const ul = el("ul", { class: "list" }); siblings.slice(0, 8).forEach(x => ul.append(factButton(x)));
+      panel.append(ul);
+    }
+    panel.append(el("div", { class: "danger" },
+      el("button", { type: "button", onclick: () => forget(f) }, "Forget this")));
+    return;
+  }
+
+  if (state.name) {
+    const ids = new Set(data.mentions[state.name] || []);
+    panel.append(el("h2", {}, state.name),
+                 el("p", {}, `Mentioned in ${ids.size} facts, linked on the map.`));
+    const ul = el("ul", { class: "list" }); all.filter(f => ids.has(f.id)).forEach(f => ul.append(factButton(f, true)));
+    panel.append(ul);
+    return;
+  }
+
+  if (state.query.trim()) {
+    const found = all.filter(matches);
+    panel.append(el("h2", {}, `${found.length} match${found.length === 1 ? "" : "es"}`));
+    const ul = el("ul", { class: "list" }); found.forEach(f => ul.append(factButton(f, true)));
+    panel.append(ul);
+    return;
+  }
+
+  if (state.focus) {
+    const facts = all.filter(f => f.category === state.focus);
+    panel.append(el("h2", {}, state.focus), el("p", {}, `${facts.length} fact${facts.length === 1 ? "" : "s"}`));
+    const ul = el("ul", { class: "list" }); facts.forEach(f => ul.append(factButton(f)));
+    panel.append(ul);
+    return;
+  }
+
+  panel.append(el("h2", {}, "Everything TARS remembers"),
+    el("p", {}, "Pick a branch to zoom in, or a fact to see when it was saved."));
+  const ul = el("ul", { class: "list" });
+  for (const c of data.categories) ul.append(el("li", {}, el("button", { type: "button",
+    onclick: () => go({ focus: c.name, selected: null }) }, el("span", {}, c.name),
+    el("span", { class: "meta" }, String(c.facts.length)))));
+  panel.append(ul);
+  const recent = all.filter(f => f.saved).sort((a, b) => b.saved.localeCompare(a.saved)).slice(0, 5);
+  if (recent.length) {
+    panel.append(el("h3", {}, "Most recent"));
+    const r = el("ul", { class: "list" }); recent.forEach(f => r.append(factButton(f, true))); panel.append(r);
+  }
+  if (data.notes.length) {
+    panel.append(el("h3", {}, "Other notes in the vault"));
+    for (const n of data.notes) panel.append(el("div", { class: "note" }, el("strong", {}, n.title), el("span", {}, n.preview)));
+  }
+}
+
+async function forget(f) {
+  if (!confirm(`Forget “${f.text}”? TARS won't remember it after this.`)) return;
+  const res = await fetch("/api/forget", { method: "POST", body: JSON.stringify({ id: f.id }),
+    headers: { "X-Tars-Token": TOKEN, "Content-Type": "application/json" } });
+  const body = await res.json().catch(() => ({}));
+  toast(res.ok ? `Forgot: ${body.forgot}` : (body.error || "Couldn't forget that."));
+  state.selected = null;
+  lastJson = "";
+  await load();
+}
+
+let toastTimer = 0;
+function toast(text) {
+  const t = $("toast"); t.textContent = text; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+// ---------- navigation ----------
+$("search").addEventListener("input", (e) => {
+  const wasEmpty = !state.query.trim();
+  state.query = e.target.value; state.name = null;
+  render(false);
+  if (wasEmpty !== !state.query.trim() && !state.focus) moveTo(targetView());
+});
+$("whole").addEventListener("click", () => { $("search").value = ""; go({ focus: null, selected: null, name: null, query: "" }); });
+
+document.addEventListener("keydown", (e) => {
+  const typing = e.target.matches("input");
+  if (e.key === "/" && !typing) { e.preventDefault(); $("search").focus(); return; }
+  if (e.key === "Escape") {
+    if (typing && state.query) { e.target.value = ""; state.query = ""; render(false); return; }
+    if (state.selected) go({ selected: null });
+    else if (state.name) go({ name: null }, false);
+    else if (state.focus) go({ focus: null });
+    return;
+  }
+  if (typing || !["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].includes(e.key)) return;
+  // Arrows step through the siblings of whatever has focus.
+  const key = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.key : null;
+  let ring;
+  const node = key && (layout.byId[key] || layout.nodes.find(n => n.id === key));
+  if (node && node.kind === "fact") ring = layout.nodes.filter(n => n.kind === "fact" && n.cat === node.cat);
+  else ring = layout.nodes.filter(n => n.kind === "cat");
+  if (!ring.length) return;
+  e.preventDefault();
+  const i = Math.max(0, ring.findIndex(n => n.id === key));
+  const next = ring[(i + (e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : ring.length - 1)) % ring.length];
+  const target = svg.querySelector(`[data-key="${CSS.escape(next.id)}"]`);
+  if (target) target.focus();
+});
+
+// Drag to pan, scroll or pinch to zoom.
+let drag = null;
+svg.addEventListener("pointerdown", (e) => {
+  if (e.target.closest(".node")) return;
+  drag = { x: e.clientX, y: e.clientY, view: { ...view } };
+  svg.setPointerCapture(e.pointerId); svg.classList.add("dragging");
+});
+svg.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const box = svg.getBoundingClientRect(), k = view.w / box.width;
+  view.x = drag.view.x - (e.clientX - drag.x) * k; view.y = drag.view.y - (e.clientY - drag.y) * k;
+  applyView();
+});
+const endDrag = () => { drag = null; svg.classList.remove("dragging"); };
+svg.addEventListener("pointerup", endDrag); svg.addEventListener("pointercancel", endDrag);
+svg.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const box = svg.getBoundingClientRect();
+  const mx = view.x + (e.clientX - box.left) / box.width * view.w;
+  const my = view.y + (e.clientY - box.top) / box.height * view.h;
+  const f = Math.min(4, Math.max(0.25, Math.exp(e.deltaY * 0.0015)));
+  const w = Math.min(6000, Math.max(120, view.w * f)), h = w * view.h / view.w;
+  view = { x: mx - (mx - view.x) * (w / view.w), y: my - (my - view.y) * (h / view.h), w, h };
+  applyView();
+}, { passive: false });
+window.addEventListener("resize", () => { if (data) moveTo(targetView()); });
+
+// New facts show up while you talk to TARS.
+load();
+setInterval(() => { if (!document.hidden) load(); }, 4000);
+</script>
+</body>
+</html>

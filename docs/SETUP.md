@@ -58,11 +58,16 @@ tars probe -n 10     # Phase 1 test: Claude Haiku 5.5's real time to first word
 tars chat            # talk by typing, same brain and tools as voice
 tars voice           # push-to-talk: Ctrl+Alt+Space to talk, Ctrl+Alt+M to mute
 tars status          # what's connected, today's response times and spend
+tars memory          # the memory map: browse, search and forget what TARS remembers
 ```
 
 `tars check` creates, changes and sends nothing. Its Claude call costs a fraction of a cent. If
 the headset isn't the Windows default device, put the numbers `tars devices` shows into
 `voice.input_device_index` and `voice.output_device_index` in `config.toml`.
+
+The memory map also opens when you say "show me my memory". It runs on this PC only, at an
+address with a one-time key in it, and updates as TARS learns new things. Click a branch to zoom
+in, a fact to see when it was saved, or a name at the top to see every fact that mentions it.
 
 With `tars voice`, press the talk hotkey and speak. The mic stays open for about 8 seconds
 after TARS answers, so follow-ups don't need the hotkey, then closes so the Bluetooth

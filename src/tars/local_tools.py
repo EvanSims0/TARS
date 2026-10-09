@@ -119,6 +119,16 @@ def personality_tool(personality: Personality, listeners: list[PersonalityListen
     )
 
 
+def memory_map_tool(open_map: Callable[[], str]) -> Tool:
+    async def show(args: dict[str, Any]) -> str:
+        open_map()
+        return "The memory map is open in the browser on the PC."
+
+    return Tool("show_memory_map", "Open the memory map: everything TARS remembers, on the PC screen, to browse, "
+                "search and forget facts. Use when the user asks to see or browse their memory.",
+                schema({}), Tier.READ, show)
+
+
 def build_tools(vault: Vault, transcripts: Transcripts, timers: Timers, undo: UndoStack) -> list[Tool]:
     async def set_timer(args: dict[str, Any]) -> ActionResult:
         name = (args.get("name") or "kitchen").strip().lower()
