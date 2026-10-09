@@ -154,7 +154,7 @@ def build_tools(client: TodoistClient, config: TodoistConfig) -> list[Tool]:
             store = sections.get(t.get("section_id") or "", "Unsorted")
             if args.get("store") and store.lower() != args["store"].lower():
                 continue
-            by_store.setdefault(store, []).append(t["content"])
+            by_store.setdefault(store, []).append(f"{t['content']} [id {t['id']}]")
         return "\n".join(f"{store}: {', '.join(items)}" for store, items in by_store.items()) or "Nothing for that store."
 
     return [
@@ -185,7 +185,8 @@ def build_tools(client: TodoistClient, config: TodoistConfig) -> list[Tool]:
         ),
         Tool(
             "read_shopping_list",
-            "Read the shopping list, grouped by store, optionally for one store.",
+            "Read the shopping list, grouped by store, optionally for one store. Tick items off with "
+            "complete_task using their ids.",
             schema({"store": {"type": "string"}}),
             Tier.READ, read_shopping, service="Todoist",
         ),

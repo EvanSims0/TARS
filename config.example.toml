@@ -3,6 +3,7 @@
 # in Windows Credential Manager.
 
 user_name = ""            # how TARS refers to you
+user_email = ""           # your Gmail address, so "email me" works
 # vault_path = "C:/Users/you/TARS Vault"     # default: %APPDATA%\TARS\vault
 # backup_path = "D:/Backups/TARS Vault"      # default: %APPDATA%\TARS\vault-backups
 
@@ -33,6 +34,19 @@ elevenlabs_usd_per_1k_chars = 0.05
 max_per_day = 3
 quiet_start = "22:00"
 quiet_end = "08:00"
+
+[brief]
+enabled = true
+time = "09:00"            # spoken at 9, or as soon as the PC is on after 9 (once a day)
+contents = "today's events, the weather, tasks due today, and anything urgent in email"
+
+[email]
+urgent = [
+  "threats to personal information: security alerts, password resets you didn't ask for, suspicious logins, identity theft or data-breach notices",
+  "money problems: failed or declined payments, overdrafts, overdue bills, collections, fraud alerts",
+  "someone asking for a reply or decision by a deadline today or tomorrow",
+]
+ignore = ["newsletters", "promotions and marketing"]
 
 [todoist]
 shopping_project = "Shopping"

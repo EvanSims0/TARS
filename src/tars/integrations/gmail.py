@@ -155,6 +155,7 @@ def build_tools(gmail: Gmail) -> list[Tool]:
         return ActionResult(f"Labelled {len(ids)} message(s) {args['label']}.", undo=undo, undo_label="label mail")
 
     async def _draft(args: dict[str, Any]) -> ActionResult:
+        args = {k: v for k, v in args.items() if k != "draft_id"}
         thread_id, headers, orig_subject = None, {}, ""
         if args.get("reply_to_message_id"):
             thread_id, headers, orig_subject = await gmail.reply_context(args["reply_to_message_id"])
@@ -174,6 +175,11 @@ def build_tools(gmail: Gmail) -> list[Tool]:
             thread_id, headers, orig_subject = await gmail.reply_context(args["reply_to_message_id"])
         subject = args.get("subject") or f"Re: {orig_subject}"
         await gmail.send(build_raw(args["to"], subject, args["body"], headers), thread_id)
+        if args.get("draft_id"):
+            try:
+                await gmail.delete_draft(args["draft_id"])
+            except ToolError:
+                pass  # sent either way; a leftover draft is harmless
         return f"Sent to {', '.join(args['to'])}."
 
     async def send_read_back(args: dict[str, Any]) -> str:
@@ -191,6 +197,8 @@ def build_tools(gmail: Gmail) -> list[Tool]:
         "body": {"type": "string"},
         "reply_to_message_id": {"type": "string"},
     }
+    send_fields = {**compose, "draft_id": {"type": "string", "description": "The draft being sent, if any; "
+                                                                        "it's removed after sending"}}
     ids = {"message_ids": {"type": "array", "items": {"type": "string"}}}
     return [
         Tool("list_email", "List email (default: unread in inbox) with sender, subject and snippet. "
@@ -207,8 +215,9 @@ def build_tools(gmail: Gmail) -> list[Tool]:
              Tier.CREATE_FOR_YOU, label, service="Gmail"),
         Tool("draft_email", "Save an email or reply as a Gmail draft without sending it.",
              schema(compose, ["to", "body"]), Tier.CREATE_FOR_YOU, _draft, service="Gmail"),
-        Tool("send_email", "Send an email or reply. The user must confirm the exact text first.",
-             schema(compose, ["to", "body"]), Tier.AFFECTS_OTHERS, send,
+        Tool("send_email", "Send an email or reply. The user must confirm the exact text first. "
+             "To send a saved draft, pass its full text and its draft_id.",
+             schema(send_fields, ["to", "body"]), Tier.AFFECTS_OTHERS, send,
              read_back=send_read_back, park=_draft, service="Gmail"),
     ]
 

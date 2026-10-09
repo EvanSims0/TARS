@@ -9,6 +9,7 @@ Every tool call passes through the confirmation gate before it can run.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -123,6 +124,8 @@ class Agent:
         config: BrainConfig,
         timezone: str = "",
         user_name: str = "",
+        user_email: str = "",
+        instructions: str = "",
         clock: Callable[[], datetime] = datetime.now,
     ):
         self.backend = backend
@@ -136,6 +139,8 @@ class Agent:
         self.config = config
         self.timezone = timezone
         self.user_name = user_name
+        self.user_email = user_email
+        self.instructions = instructions
         self.clock = clock
         self.messages: list[dict[str, Any]] = []
         self._producers: list[str | None] = []  # which model wrote each message
@@ -170,6 +175,8 @@ class Agent:
         now = self.clock()
         tz = f" ({self.timezone})" if self.timezone else ""
         who = f" The user is {self.user_name}." if self.user_name else ""
+        if self.user_email:
+            who += f" Their email address is {self.user_email}."
         where = "spoken at the PC" if channel is Channel.PC else "sent from the phone via Telegram"
         return f"[{now:%A %d %B %Y, %H:%M}{tz}. Message {where}.{who}]"
 
@@ -178,6 +185,8 @@ class Agent:
         if not deep:
             tools.append({**THINK_HARDER, "eager_input_streaming": True})
         system = [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
+        if self.instructions:
+            system.append({"type": "text", "text": self.instructions})
         if self._memory_snapshot:
             system.append({"type": "text", "text": "What you remember about the user:\n" + self._memory_snapshot})
         request: dict[str, Any] = {
@@ -227,6 +236,10 @@ class Agent:
 
         try:
             await self._turn(text, channel, say, result)
+        except asyncio.CancelledError:
+            # Talked over or stopped: leave the history valid for the next request.
+            self._repair_history()
+            raise
         finally:
             result.text = "".join(spoken).strip()
             self.transcripts.append("assistant", result.text, channel.value)
@@ -321,6 +334,17 @@ class Agent:
 
         await say("That took more steps than I expected, so I stopped.")
         self._append("assistant", [{"type": "text", "text": "Stopped: too many steps."}])
+
+    def _repair_history(self) -> None:
+        if not self.messages:
+            return
+        last = self.messages[-1]
+        if last["role"] == "assistant":
+            pending = [b["id"] for b in last["content"] if b["type"] == "tool_use"]
+            if not pending:
+                return
+            self._append("user", [self._tool_result(i, "Interrupted by the user; not run.", True) for i in pending])
+        self._append("assistant", [{"type": "text", "text": "(interrupted)"}])
 
     @staticmethod
     def _tool_result(tool_use_id: str, content: str, is_error: bool = False) -> dict[str, Any]:

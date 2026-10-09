@@ -4,7 +4,8 @@ A hands-free everyday voice assistant powered by Claude. It runs on your Windows
 hotkey and talk through your headset, and it handles email, calendar, reminders and lists
 through your own accounts. It reads back anything that affects other people and waits for a yes.
 
-The product spec is in [docs/PRD.md](docs/PRD.md); setup is in [docs/SETUP.md](docs/SETUP.md).
+The product spec is in [docs/PRD.md](docs/PRD.md), setup is in [docs/SETUP.md](docs/SETUP.md), and the
+phase-gate test script is in [docs/TEST_SCRIPT.md](docs/TEST_SCRIPT.md).
 
 ## How it fits together
 
@@ -38,9 +39,10 @@ push-to-talk mic ─► Deepgram Flux ─► TarsBrain ─► ElevenLabs Flash v
 | Push-to-talk voice loop on Pipecat (Deepgram Flux → Claude → ElevenLabs), interruptible, "stop"/"cancel" | Run the four Phase 1 tests on the real PC and headset (`tars probe`, turn detection, interruption) |
 | Calendar: read, find free time, add/move your own events, invites through the gate | Telegram phone remote and the Cloudflare offline relay |
 | Todoist reminders, tasks and the shopping list by store, with undo | "Hey TARS" wake word (livekit-wakeword) |
-| Email: summarise unread, read, archive/label, drafts; sending gated with a full read-back | Morning brief and the scheduler; tray icon, overlay, history and settings windows |
+| Email: summarise unread, read, archive/label, drafts; sending gated with a full read-back | Tray icon, overlay, history and settings windows |
 | Weather and traffic-aware leave-by times, named timers | Recorded "I'm offline" message |
 | Memory vault with "noted" / "forget that", 7-day transcripts, nightly backup | Proactive features (Phase 3) |
+| Morning brief at 9am, or as soon as the PC is on after 9 | |
 | Spend cap, per-turn response time and cost log, `tars status` | |
 
 ## Development

@@ -198,3 +198,39 @@ async def test_undo_reverses_last_action(tmp_path, make_agent, spoken, registry,
     await agent.handle("remind me to buy milk", spoken)
     assert await agent.undo.pop() == "Removed it."
     assert undone == [True]
+
+
+async def test_interrupted_turn_leaves_valid_history(make_agent, spoken):
+    import asyncio
+
+    class Hang(FakeBackend):
+        async def stream(self, *, on_text, **request):
+            if len(self.requests) == 1:
+                self.requests.append(request)
+                await asyncio.sleep(10)
+            return await super().stream(on_text=on_text, **request)
+
+    backend = Hang(reply(tool_use("list_events", {"day": "today"})))
+    agent = make_agent(backend)
+    task = asyncio.create_task(agent.handle("tell me how coffee is made", spoken))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    # Every tool_use has a result and roles alternate, so the next request is valid.
+    roles = [m["role"] for m in agent.messages]
+    assert roles[-1] == "assistant" and all(a != b for a, b in zip(roles, roles[1:]))
+    uses = {b["id"] for m in agent.messages for b in m["content"] if b["type"] == "tool_use"}
+    results = {b["tool_use_id"] for m in agent.messages for b in m["content"] if b["type"] == "tool_result"}
+    assert uses == results
+
+
+async def test_no_says_cancelled(make_agent, spoken):
+    backend = FakeBackend(reply(tool_use("send_email", {"to": ["me@x.com"], "body": "TARS test three"})))
+    agent = make_agent(backend)
+    await agent.handle("email me a note", spoken)
+    spoken.out.clear()
+    await agent.handle("no", spoken)
+    assert said(spoken) == "Okay, cancelled. Nothing was sent."

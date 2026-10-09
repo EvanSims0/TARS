@@ -78,6 +78,26 @@ class LocationConfig:
 
 
 @dataclass
+class BriefConfig:
+    enabled: bool = True
+    # Given at this time, or as soon as the PC is on (and TARS running) after it.
+    time: str = "09:00"
+    contents: str = "today's events, the weather, tasks due today, and anything urgent in email"
+
+
+@dataclass
+class EmailConfig:
+    # What counts as urgent when triaging mail.
+    urgent: list[str] = field(default_factory=lambda: [
+        "threats to personal information: security alerts, password resets you didn't ask for, "
+        "suspicious logins, identity theft or data-breach notices",
+        "money problems: failed or declined payments, overdrafts, overdue bills, collections, fraud alerts",
+        "someone asking for a reply or decision by a deadline today or tomorrow",
+    ])
+    ignore: list[str] = field(default_factory=lambda: ["newsletters", "promotions and marketing"])
+
+
+@dataclass
 class PrivacyConfig:
     transcript_days: int = 7
     backup_days: int = 30
@@ -89,6 +109,7 @@ class Config:
     vault_path: Path | None = None
     backup_path: Path | None = None
     user_name: str = ""
+    user_email: str = ""
     brain: BrainConfig = field(default_factory=BrainConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
     spend: SpendConfig = field(default_factory=SpendConfig)
@@ -96,6 +117,18 @@ class Config:
     todoist: TodoistConfig = field(default_factory=TodoistConfig)
     location: LocationConfig = field(default_factory=LocationConfig)
     privacy: PrivacyConfig = field(default_factory=PrivacyConfig)
+    brief: BriefConfig = field(default_factory=BriefConfig)
+    email: EmailConfig = field(default_factory=EmailConfig)
+
+    def instructions(self) -> str:
+        """User-specific rules for the system prompt; stable unless the config changes."""
+        urgent = "".join(f"\n- {u}" for u in self.email.urgent)
+        ignore = ", ".join(self.email.ignore)
+        return (
+            f"Email counts as urgent when it is about:{urgent}\n"
+            f"Never treat these as urgent: {ignore}.\n"
+            f"A morning brief covers {self.brief.contents}, in under 20 seconds."
+        )
 
     @property
     def data_dir(self) -> Path:

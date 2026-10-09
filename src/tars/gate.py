@@ -135,7 +135,7 @@ class ConfirmationGate:
         verdict = classify_reply(reply)
         if verdict == "no":
             self.pending = None
-            return Resolution(executed=False, message="Okay, I won't.")
+            return Resolution(executed=False, message="Okay, cancelled. Nothing was sent.")
         if verdict == "other":
             self.pending = None
             return Resolution(executed=False, message="", passthrough=True)

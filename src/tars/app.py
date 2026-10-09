@@ -86,6 +86,8 @@ def build_app(
         config=config.brain,
         timezone=config.location.timezone,
         user_name=config.user_name,
+        user_email=config.user_email,
+        instructions=config.instructions(),
     )
     return App(config, agent, timers, vault, transcripts, ledger, turn_log, connected)
 

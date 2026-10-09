@@ -131,6 +131,10 @@ class TarsBrain(FrameProcessor):
             self.on_state("idle")
             self.on_bot_done()
 
+    async def start_turn(self, text: str) -> None:
+        """Begin a turn TARS starts itself, such as the morning brief."""
+        self._task = self.create_task(self._respond(text))
+
     async def announce(self, text: str) -> None:
         """Speak something unprompted, such as a finished timer."""
         self.ledger.record_tts(len(text))

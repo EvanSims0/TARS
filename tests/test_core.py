@@ -134,3 +134,34 @@ def test_example_config_is_valid():
     from pathlib import Path
 
     load_config(Path(__file__).resolve().parents[1] / "config.example.toml")
+
+
+async def test_morning_brief_once_a_day_after_nine(tmp_path):
+    from tars.brief import BriefScheduler
+    from tars.config import AlertConfig, BriefConfig
+
+    now = [datetime(2026, 10, 9, 8, 30)]
+    given = []
+
+    async def deliver():
+        given.append(now[0])
+
+    sched = BriefScheduler(BriefConfig(), AlertConfig(), tmp_path / "last.txt", deliver, clock=lambda: now[0])
+    assert not await sched.tick()                    # before 9
+    now[0] = datetime(2026, 10, 9, 11, 15)           # PC turned on late morning
+    assert await sched.tick() and len(given) == 1
+    assert not await sched.tick()                    # only once a day
+    now[0] = datetime(2026, 10, 10, 23, 0)           # next day, but quiet hours
+    assert not await sched.tick()
+    now[0] = datetime(2026, 10, 11, 9, 0)
+    sched.busy = lambda: True                        # waits for a conversation to finish
+    assert not await sched.tick()
+    sched.busy = lambda: False
+    assert await sched.tick() and len(given) == 2
+
+
+def test_urgency_rules_reach_the_prompt():
+    from tars.config import Config
+
+    text = Config().instructions()
+    assert "money problems" in text and "personal information" in text and "newsletters" in text

@@ -286,7 +286,7 @@ Each phase starts only once the gate before it is met. Phase 1 opens with four t
 
 ## Needs your input
 
-Twenty-four of 38 items are done and nothing blocks Phase 1; the 14 left have sensible defaults, except account setup, which opens Phase 1. Answers move into Decisions as they come in.
+Twenty-eight of 38 items are done (as of 2026-10-09) and nothing blocks Phase 1; the 10 left have sensible defaults, except account setup, which opens Phase 1. Answers move into Decisions as they come in.
 
 **Your PC and phone**
 
@@ -300,17 +300,17 @@ Twenty-four of 38 items are done and nothing blocks Phase 1; the 14 left have se
 
 - [x] 6. What should it be called, and what wake phrase? **TARS, woken with "Hey TARS".**
 - [x] 7. Personality? **Dry wit.**
-- [ ] 8. Voice: which of a few samples you like best, and how fast it should talk.
+- [x] 8. Voice: which of a few samples you like best, and how fast it should talk. **An original voice designed in ElevenLabs (voice ID in the config).**
 - [ ] 9. How should it address you, and how much small talk is welcome?
 - [x] 10. Default reply length? **One sentence.**
 
 **Day to day**
 
 - [x] 11. Which three jobs must it do well in week one? **Email triage, calendar, reminders and lists.**
-- [ ] 12. Morning brief: what time, started how (you say "good morning" or it starts itself), and what goes in it?
+- [x] 12. Morning brief: what time, started how (you say "good morning" or it starts itself), and what goes in it? **9am, or as soon as the PC is on after 9; once a day; events, weather, tasks due and urgent email.**
 - [x] 13. Which alerts may interrupt you, how many, and quiet hours? **Up to 3 a day; quiet from 10pm to 8am.**
-- [ ] 14. What makes an email urgent: particular people, keywords, or senders to always ignore?
-- [ ] 15. Which people should it know about from the start (family, close friends, birthdays)?
+- [x] 14. What makes an email urgent: particular people, keywords, or senders to always ignore? **Threats to personal information (security alerts, breaches, identity theft) and money problems (failed payments, overdue bills, fraud); newsletters and promotions are never urgent.**
+- [ ] 15. Which people should it know about from the start (family, close friends, birthdays)? *Deferred: not needed for now.*
 
 **Trust and control**
 
@@ -347,7 +347,7 @@ Twenty-four of 38 items are done and nothing blocks Phase 1; the 14 left have se
 - [ ] 34. How many hours a week can you give to trying each phase and giving feedback?
 - [ ] 35. Windows 10 or 11, and is it your everyday PC or a dedicated one?
 - [ ] 36. More than one Google account, and are any calendars shared with others?
-- [ ] 37. About 25 phrases you'd actually say to TARS, for the test script.
+- [x] 37. About 25 phrases you'd actually say to TARS, for the test script. **See [TEST_SCRIPT.md](TEST_SCRIPT.md).**
 - [ ] 38. Create accounts for the Anthropic API, Deepgram, ElevenLabs, Google Cloud, Todoist, a Telegram bot and Cloudflare (about an hour, guided).
 
 ## Sources

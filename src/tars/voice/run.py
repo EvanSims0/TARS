@@ -19,6 +19,7 @@ from pipecat.workers.runner import WorkerRunner
 
 from .. import secrets
 from ..app import build_app
+from ..brief import BRIEF_REQUEST, BriefScheduler
 from ..config import Config
 from .brain import TarsBrain
 from .mic import MicController, transport
@@ -119,10 +120,24 @@ async def run_voice(config: Config) -> None:
         logger.info(f"{len(parked)} draft(s) from the phone are waiting for you.")
     show_state("idle")
 
+    brief = BriefScheduler(
+        config.brief, config.alerts, config.data_dir / "last-brief.txt",
+        deliver=lambda: brain.start_turn(BRIEF_REQUEST),
+        busy=lambda: brain.busy or mic.mic.is_open,
+    )
+
     runner = WorkerRunner()
     await runner.add_workers(worker)
+
+    @worker.event_handler("on_pipeline_started")
+    async def _start_brief(worker, frame):
+        brief_task.append(asyncio.create_task(brief.run()))
+
+    brief_task: list[asyncio.Task] = []
     try:
         await runner.run()
     finally:
+        for task in brief_task:
+            task.cancel()
         hotkeys.stop()
         mic.close()

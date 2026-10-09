@@ -55,6 +55,8 @@ class Places:
             FORECAST, latitude=lat, longitude=lon, timezone="auto", forecast_days=max(1, min(days, 7)),
             current="temperature_2m,apparent_temperature,weather_code,wind_speed_10m",
             daily="weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+            hourly="temperature_2m,precipitation_probability,weather_code",
+            forecast_hours=24,
         )
         cur, daily = data["current"], data["daily"]
         units = data.get("current_units", {}).get("temperature_2m", "°C")
@@ -62,6 +64,14 @@ class Places:
             f"{name} now: {_WMO.get(cur['weather_code'], 'unknown')}, {cur['temperature_2m']}{units} "
             f"(feels {cur['apparent_temperature']}{units}), wind {cur['wind_speed_10m']} km/h."
         ]
+        hourly = data.get("hourly")
+        if hourly:
+            parts = [
+                f"{t[11:16]} {_WMO.get(hourly['weather_code'][i], '?')} {hourly['temperature_2m'][i]}{units} "
+                f"{hourly['precipitation_probability'][i]}% rain"
+                for i, t in enumerate(hourly["time"]) if i % 3 == 0
+            ]
+            lines.append("Next 24 hours: " + "; ".join(parts) + ".")
         for i, day in enumerate(daily["time"]):
             lines.append(
                 f"{day}: {_WMO.get(daily['weather_code'][i], 'unknown')}, "

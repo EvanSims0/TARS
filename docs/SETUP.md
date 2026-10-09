@@ -13,8 +13,8 @@ pip install -e ".[voice,dev]"
 tars init
 ```
 
-`tars init` writes `%APPDATA%\TARS\config.toml`. Open it and fill in your name, home
-address, latitude, longitude and timezone.
+`tars init` writes `%APPDATA%\TARS\config.toml`. Open it and fill in your name, your Gmail
+address (`user_email`, so "email me" works), home address, latitude, longitude and timezone.
 
 ## 2. Accounts and keys
 
