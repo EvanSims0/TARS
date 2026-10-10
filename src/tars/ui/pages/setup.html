@@ -48,12 +48,12 @@
   document.getElementById("titlebar").replaceWith(TARS.titlebar("Set up TARS"));
   const STEPS = ["You", "Keys", "Google", "Headset", "Start at login", "First run"];
   const KEYS = [
-    ["ANTHROPIC_API_KEY", "Language model", "API keys → Create key. Set a monthly limit there too.", "https://console.anthropic.com/settings/keys"],
-    ["DEEPGRAM_API_KEY", "Speech-to-text", "API Keys → Create a New API Key.", "https://console.deepgram.com"],
-    ["ELEVENLABS_API_KEY", "Voice", "Developers → API Keys.", "https://elevenlabs.io/app/settings/api-keys"],
-    ["TODOIST_API_TOKEN", "Tasks", "Settings → Integrations → Developer → API token.", "https://app.todoist.com/app/settings/integrations/developer"],
+    ["ANTHROPIC_API_KEY", "Anthropic (Claude, the brain)", "Add credit under Billing first, then API keys → Create key. Set a monthly limit there too.", "https://console.anthropic.com/settings/keys"],
+    ["DEEPGRAM_API_KEY", "Deepgram (hearing you)", "API Keys → Create a New API Key.", "https://console.deepgram.com"],
+    ["ELEVENLABS_API_KEY", "ElevenLabs (TARS's voice)", "Developers → API Keys.", "https://elevenlabs.io/app/settings/api-keys"],
+    ["TODOIST_API_TOKEN", "Todoist (tasks and lists)", "Settings → Integrations → Developer → API token.", "https://app.todoist.com/app/settings/integrations/developer"],
   ];
-  const MAPS = ["GOOGLE_MAPS_API_KEY", "Traffic (optional)", "Enable the Routes API, then Credentials → Create API key. Needs a billing account.",
+  const MAPS = ["GOOGLE_MAPS_API_KEY", "Google Maps (traffic, optional)", "Enable the Routes API, then Credentials → Create API key. Needs a billing account.",
                 "https://console.cloud.google.com/apis/library/routes.googleapis.com"];
   let step = 0, state = null, checking = {}, errors = {}, checks = null, pollTimer = 0;
   const verified = () => KEYS.every(([k]) => state.keys[k]);
