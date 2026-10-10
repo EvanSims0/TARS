@@ -1,6 +1,7 @@
 # Setting up TARS on your PC
 
-About an hour, once. Everything here is on Windows 11 or 10 with Python 3.12 (3.11 or newer works).
+About an hour, once. Everything here is on Windows 11 or 10. `uv` installs Python 3.12, the version
+TARS is tested on (`.python-version` pins it), even if a newer Python is already on the PC.
 
 ## 1. Install
 
@@ -8,7 +9,7 @@ The versions that passed the tests are pinned in `uv.lock`; `uv` installs exactl
 
 ```powershell
 powershell -ExecutionPolicy Bypass -c "irm https://astral.sh/uv/install.ps1 | iex"   # once; then open a new window
-git clone https://github.com/EvanSims0/TARS
+git clone -b main https://github.com/EvanSims0/TARS
 cd TARS
 uv sync --locked --extra voice --extra desktop
 .venv\Scripts\activate
