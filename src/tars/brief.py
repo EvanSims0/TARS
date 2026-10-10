@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import AlertConfig, BriefConfig
 
@@ -79,12 +80,28 @@ class BriefScheduler:
             await asyncio.sleep(every_seconds)
 
 
+def local_day(now: datetime, timezone: str = "") -> tuple[datetime, datetime]:
+    """Today from midnight to midnight in the user's timezone.
+
+    On the day the clocks change that is 23 or 25 hours; taking today's UTC offset back to
+    midnight would start the day an hour early or late.
+    """
+    try:
+        zone = ZoneInfo(timezone) if timezone else (now.tzinfo or now.astimezone().tzinfo)
+    except (ZoneInfoNotFoundError, ValueError):
+        zone = now.astimezone().tzinfo
+    day = now.astimezone(zone).date()
+    return datetime.combine(day, time.min, zone), datetime.combine(day + timedelta(days=1), time.min, zone)
+
+
 async def mission_card(app: Any, now: datetime | None = None) -> dict[str, Any]:
     """The overlay's pre-launch checklist: one GO/HOLD row per system, from real data.
 
     Every row is optional; a service that isn't connected or doesn't answer is left out.
     """
     now = now or datetime.now().astimezone()
+    day_start, day_end = local_day(now, app.config.location.timezone)
+    now = now.astimezone(day_start.tzinfo)
     rows: list[dict[str, str]] = []
 
     async def tool(name: str, args: dict[str, Any]) -> str | None:
@@ -106,8 +123,7 @@ async def mission_card(app: Any, now: datetime | None = None) -> dict[str, Any]:
     lead = ""
     if app.mood.events is not None:
         try:
-            end = now.replace(hour=23, minute=59, second=0, microsecond=0)
-            events = await app.mood.events(now.replace(hour=0, minute=0, second=0, microsecond=0), end)
+            events = await app.mood.events(day_start, day_end)
         except Exception:
             events = None
         if events is not None:

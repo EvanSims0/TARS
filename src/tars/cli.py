@@ -222,10 +222,40 @@ def cmd_setup(args, config) -> None:
 
 
 def cmd_backup(args, config) -> None:
-    from .memory import Vault
+    from .backup import BackupError, backup
 
-    target = Vault(config.vault).backup(config.backups, config.privacy.backup_days)
-    print(f"Backed up the vault to {target}")
+    try:
+        target = backup(config, args.config or config.home / "config.toml")
+    except BackupError as e:
+        raise SystemExit(f"Backup failed: {e}") from None
+    print(f"Backed up the memory vault, settings and history to {target} (checked against the originals).")
+
+
+def cmd_restore(args, config) -> None:
+    from .backup import SAFETY, BackupError, available, restore
+
+    found = available(config)
+    if not args.which:
+        if not found:
+            raise SystemExit(f"No backups yet in {config.backups}. `tars backup` makes one.")
+        print("Backups, newest first:")
+        for path in found:
+            note = "  (how things were before the last restore)" if path.name == SAFETY else ""
+            print(f"  {path.name}{note}")
+        print("Restore one with `tars restore <date>`, e.g. `tars restore latest`.")
+        return
+    source = found[0] if args.which == "latest" and found else config.backups / args.which
+    print(f"This puts back the memory vault, settings and history from {source.name}.\n"
+          "Quit TARS first (tray menu, Quit) and close Obsidian. Your current state is kept as 'before-restore'.")
+    if not args.yes and input("Restore it? [y/N] ").strip().lower() not in ("y", "yes"):
+        print("Nothing changed.")
+        return
+    try:
+        restore(config, args.config or config.home / "config.toml", source)
+    except BackupError as e:
+        raise SystemExit(str(e)) from None
+    undo = "" if source.name == SAFETY else " To undo it: `tars restore before-restore`."
+    print(f"Restored {source.name}. Start TARS again.{undo}")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -257,10 +287,18 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("memory", help="browse everything TARS remembers, as a map")
     p.add_argument("--no-browser", action="store_true", help="print the address instead of opening it")
     p.set_defaults(fn=cmd_memory)
-    sub.add_parser("backup", help="copy the memory vault to the backup folder").set_defaults(fn=cmd_backup)
+    sub.add_parser("backup", help="copy the memory vault, settings and history to the backup folder") \
+        .set_defaults(fn=cmd_backup)
+    p = sub.add_parser("restore", help="list backups, or put one back: tars restore <date|latest>")
+    p.add_argument("which", nargs="?", help="a backup's date, 'latest' or 'before-restore'")
+    p.add_argument("--yes", action="store_true", help="don't ask first")
+    p.set_defaults(fn=cmd_restore)
 
     args = parser.parse_args(argv)
     config = load_config(args.config)
+    from . import logs
+
+    logs.start(config.data_dir, f"tars-{args.command}", config.privacy.transcript_days)
     args.fn(args, config)
 
 

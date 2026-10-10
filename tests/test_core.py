@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime
+from datetime import datetime
 from types import SimpleNamespace
+
+import pytest
 
 from tars.config import SpendConfig, load_config
 from tars.local_tools import Timers
 from tars.memory import Vault
-from tars.sanitize import html_to_text, wrap_untrusted
+from tars.sanitize import for_speech, html_to_text, wrap_untrusted
 from tars.spend import SpendLedger, SpendState, llm_cost
 from tars.transcripts import Transcripts
 from tars.voice.chunker import PhraseChunker
@@ -65,15 +67,6 @@ def test_vault_remember_forget_snapshot(tmp_path):
     assert vault.forget("birthday") == ["Sam's birthday is June 3"]
     assert "- " not in vault.snapshot()
     assert (tmp_path / "v" / ".obsidian").is_dir()
-
-
-def test_vault_backup_prunes_old_copies(tmp_path):
-    vault = Vault(tmp_path / "v")
-    vault.ensure()
-    backups = tmp_path / "b"
-    vault.backup(backups, keep_days=30, today=date(2026, 9, 1))
-    vault.backup(backups, keep_days=30, today=date(2026, 10, 8))
-    assert sorted(p.name for p in backups.iterdir()) == ["2026-10-08"]
 
 
 def test_transcripts_forget_and_purge(tmp_path):
@@ -197,3 +190,15 @@ def test_remember_finds_a_heading_edited_by_hand(tmp_path):
     vault.file.write_text("# TARS memory\n\n## people \n", encoding="utf-8")
     vault.remember("Jess likes tea", "People")
     assert vault.file.read_text(encoding="utf-8").lower().count("## people") == 1
+
+
+@pytest.mark.parametrize("text, spoken", [
+    ("Three things 🎉. The first is brunch.", "Three things. The first is brunch."),
+    ("Subject: 🔥🔥 FLASH SALE 🔥🔥 70% off", "Subject: FLASH SALE 70% off"),
+    ("The 👨‍👩‍👧‍👦 reunion is in 🇯🇵 Ōkubo", "The reunion is in Ōkubo"),
+    ("Press 1️⃣ to confirm ✅", "Press 1 to confirm"),
+    ("It's 14°C at the café, ラーメン after — fine ☕.", "It's 14°C at the café, ラーメン after — fine."),
+    ("🎂🎉", ""),
+])
+def test_emoji_are_dropped_before_speech_but_other_text_is_kept(text, spoken):
+    assert for_speech(text) == spoken

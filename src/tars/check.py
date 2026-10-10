@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 
-from . import secrets
+from . import net, secrets
 from .actions import ToolError
 from .config import Config
 
@@ -197,7 +197,7 @@ async def _first_line(text: Awaitable[str]) -> str:
 
 
 async def run_checks(config: Config) -> list[Check]:
-    async with httpx.AsyncClient(timeout=15) as http:
+    async with net.client() as http:
         return await _run_checks(config, http)
 
 

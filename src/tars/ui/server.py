@@ -257,12 +257,10 @@ class AppServer:
         return out
 
     def check_service(self, service: str) -> dict[str, Any]:
-        import httpx
-
-        from .. import check
+        from .. import check, net
 
         async def run() -> list[Any]:
-            async with httpx.AsyncClient(timeout=15) as http:
+            async with net.client() as http:
                 if service == "Claude":
                     return [await check.check_claude(self.ctx.config)]
                 if service == "Deepgram":

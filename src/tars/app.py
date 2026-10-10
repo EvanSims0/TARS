@@ -5,9 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-import httpx
-
-from . import secrets
+from . import net, secrets
 from .actionlog import ActionLog
 from .actions import ToolRegistry
 from .agent import Agent, AnthropicBackend, Backend
@@ -77,7 +75,7 @@ def build_app(
     registry.add(personality_tool(personality, listeners))
     mood = MoodMonitor(personality)
     connected: dict[str, bool] = {}
-    http = httpx.AsyncClient(timeout=15)
+    http = net.client()
 
     from .integrations import places
 

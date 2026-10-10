@@ -72,8 +72,10 @@ a:hover { text-decoration-thickness: 2px; }
         display: inline-flex; gap: 8px; align-items: center; }
 
 /* ---------- surfaces ---------- */
-.card { background: var(--card); border-radius: var(--r-card); padding: 12px 14px; display: grid; gap: 8px; }
-.well { background: var(--surface-deep); border-radius: var(--r-card); padding: 12px 14px; display: grid; gap: 6px; }
+.card { background: var(--card); border-radius: var(--r-card); padding: 12px 14px; display: grid; gap: 8px; min-width: 0;
+  overflow-wrap: anywhere; } /* a long email address or name wraps instead of widening the card */
+.well { background: var(--surface-deep); border-radius: var(--r-card); padding: 12px 14px; display: grid; gap: 6px; min-width: 0;
+  overflow-wrap: anywhere; }
 .outline { border: 1px solid var(--slate); border-radius: var(--r-card); }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--slate);
         border-radius: 999px; font-size: 11px; font-weight: 500; color: var(--text-2); white-space: nowrap; }
@@ -95,7 +97,7 @@ a:hover { text-decoration-thickness: 2px; }
 .titlebar .controls button:hover { background: var(--hover); }
 .titlebar .controls button.close:hover { background: #c42b1c; color: #fff; }
 .split { display: grid; min-height: 0; }
-.sidebar { background: var(--surface-deep); display: flex; flex-direction: column; gap: 2px; min-height: 0; overflow: auto; }
+.sidebar { background: var(--surface-deep); display: flex; flex-direction: column; gap: 2px; min-height: 0; min-width: 0; overflow: auto; }
 .main { overflow: auto; min-width: 0; }
 
 /* nav items (Settings) and list rows (History) */
@@ -161,7 +163,7 @@ a:hover { text-decoration-thickness: 2px; }
 .overlay-head .title { font-size: 13px; font-weight: 600; }
 .grip { width: 16px; height: 16px; color: var(--text-2); cursor: grab; flex: none; }
 .who { display: grid; gap: 4px; }
-.who .said { font-size: 15px; line-height: 1.45; }
+.who .said { font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
 .who .said.past { color: var(--text-2); }
 .who-row { display: flex; align-items: center; gap: 8px; min-height: 23px; }
 .telemetry { display: flex; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--slate);
@@ -172,7 +174,7 @@ a:hover { text-decoration-thickness: 2px; }
 .wave { display: flex; align-items: center; gap: 5px; height: 40px; }
 .wave i { width: 3px; border-radius: 1.5px; background: var(--text); height: 4px; transform-origin: center; }
 .row-list { display: grid; gap: 8px; }
-.row-list .r { display: grid; grid-template-columns: 52px 1fr; gap: 12px; align-items: baseline; }
+.row-list .r { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: baseline; }
 .row-list .r .t { font: 500 13px var(--mono); color: var(--text-2); }
 
 /* ---------- cue light: lights when a line is a joke ---------- */

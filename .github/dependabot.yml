@@ -1,0 +1,24 @@
+# Weekly update PRs for the Python packages (uv.lock) and the CI actions. Security fixes
+# arrive as soon as they're published once Dependabot alerts are on in the repo settings.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for routine bumps; security updates still come one by one.
+      python:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

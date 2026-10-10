@@ -4,6 +4,8 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"  # Mondays, so a newly published vulnerability shows up without a push
 
 permissions:
   contents: read
@@ -42,3 +44,21 @@ jobs:
 
       - name: Run the offline tests
         run: uv run --no-sync pytest -q
+
+  audit:
+    # TARS holds the Gmail and Calendar sign-in, so a known hole in a dependency fails CI.
+    # Windows, because that's where it runs; the Windows-only packages are checked too.
+    name: Known vulnerabilities in dependencies
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Export the locked dependencies, every extra included
+        run: uv export --locked --all-extras --no-emit-project --format requirements-txt -o requirements-audit.txt
+
+      - name: Check them against the Python advisory database
+        run: uvx --from pip-audit==2.9.0 pip-audit -r requirements-audit.txt --require-hashes --disable-pip --progress-spinner off

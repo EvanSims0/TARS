@@ -43,7 +43,9 @@ def launch(server: AppServer) -> subprocess.Popen | None:
     data_dir = str(server.ctx.config.data_dir)
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     # The token goes through the environment, never the command line other programs can read.
-    return subprocess.Popen([sys.executable, "-m", "tars.ui.desktop", "--base", base, "--data", data_dir],
+    keep = str(server.ctx.config.privacy.transcript_days)
+    return subprocess.Popen([sys.executable, "-m", "tars.ui.desktop", "--base", base, "--data", data_dir,
+                             "--keep-days", keep],
                             env={**os.environ, "TARS_UI_TOKEN": server.token}, creationflags=flags)
 
 
@@ -305,7 +307,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="tars-desktop")
     parser.add_argument("--base", required=True)
     parser.add_argument("--data", required=True)
+    parser.add_argument("--keep-days", type=int, default=7)
     args = parser.parse_args()
+    from .. import logs
+
+    logs.start(Path(args.data), "desktop", args.keep_days)
     Shell(args.base, os.environ["TARS_UI_TOKEN"], Path(args.data)).run()
 
 

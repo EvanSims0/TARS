@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from .. import net
 from ..actions import ActionResult, Tier, Tool, ToolError, schema
 from ..config import TodoistConfig
 
@@ -18,7 +19,7 @@ BASE_URL = "https://api.todoist.com/api/v1"
 
 class TodoistClient:
     def __init__(self, token: str, http: httpx.AsyncClient | None = None):
-        self._http = http or httpx.AsyncClient(timeout=10)
+        self._http = http or net.client(10)
         self._headers = {"Authorization": f"Bearer {token}"}
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:

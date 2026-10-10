@@ -16,6 +16,7 @@ uv run pytest tests/test_gate.py::test_clear_yes -q   # one test
 uv run ruff check src tests                  # lint (rule set pinned in pyproject.toml)
 uv run tars chat                             # same brain and tools as voice, by typing
 uv run tars check                            # read-only live call to every account (needs real keys)
+uv run tars restore                          # list backups; `tars restore latest` puts one back
 ```
 
 After changing dependencies, run `uv lock` and commit `uv.lock`; CI installs with `--locked` and
@@ -47,6 +48,11 @@ runs on Windows and Linux. CI also checks that the base install (no `voice` extr
 - **Untrusted content**: email (and calendar listings) pass through `sanitize` (hidden HTML and
   invisible characters stripped) and `wrap_untrusted`. Results with `untrusted=True` taint the
   conversation, which adds a warning to later read-backs.
+- **Network**: every integration shares `net.client()`, which retries a GET once after a dropped
+  connection or a 502/503/504, and a POST/PATCH/DELETE only when it never left the PC
+  (`extensions={"idempotent": True}` opts in a POST that changes nothing). Timeouts aren't retried.
+  The retry lives in `Client.send`, not a custom transport, because a transport drops env proxies.
+  `GoogleSession.request` renews the token and repeats once on a 401.
 - **Integrations** (`integrations/`) are thin async httpx clients that raise `actions.ToolError` with
   a one-sentence, speakable message; the agent turns those into `is_error` tool results. Their
   vendor field names were written without live docs, so `tars check` and the Gate 1 script are the
@@ -71,6 +77,13 @@ runs on Windows and Linux. CI also checks that the base install (no `voice` extr
 - **State on disk** lives under `%APPDATA%\TARS` (or `TARS_HOME`; `~/.tars` elsewhere): config.toml,
   the Obsidian memory vault, transcripts and logs (kept `privacy.transcript_days`), spend and
   per-turn timing logs. Keys live in the OS credential store via `secrets` (env vars override).
+  `logs.start` gives every command (and the desktop shell) its own daily log with crashes in it
+  (`diagnose=False`, so tracebacks never show variable values). `backup.py` copies the vault,
+  config and data folder (not transcripts or logs) into a dated folder, verified before it's
+  renamed into place; `restore` keeps the previous state as `before-restore`.
+- **Speech text**: `sanitize.for_speech` drops emoji before TTS (`TarsBrain.speak` and `announce`);
+  screens keep them. UI text that can be long (addresses, names) must wrap: cards and wells use
+  `overflow-wrap: anywhere`, and grid/flex children need `minmax(0, 1fr)` or `min-width: 0`.
 
 ## Tests
 

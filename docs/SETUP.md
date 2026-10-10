@@ -94,14 +94,29 @@ This registers two Task Scheduler tasks for your user:
 - **TARS** runs `tars voice` at logon (a logon task rather than a service, so it can reach your audio).
 - **TARS vault backup** runs `tars backup` nightly at 3:00, waking the PC if needed, and keeps 30 days of copies.
 
+Each backup holds the memory vault, `config.toml` and the data folder (personality, spend, the
+action log, parked drafts), and is checked file by file against the originals before it counts.
+Conversations and logs are left out on purpose: they're kept 7 days and "forget" has to mean it.
+Keys stay in Windows Credential Manager and are never copied.
+
+To put a backup back, quit TARS (tray menu, Quit), then:
+
+```powershell
+uv run tars restore            # lists the backups, newest first
+uv run tars restore latest     # or a date, e.g. tars restore 2026-10-09
+```
+
+What you had just before the restore is kept as `before-restore`, so `tars restore before-restore`
+undoes it.
+
 ## Where things live
 
 | What | Where |
 |---|---|
 | Config | `%APPDATA%\TARS\config.toml` |
 | Memory vault (open it in Obsidian) | `%APPDATA%\TARS\vault` unless `vault_path` is set |
-| Vault backups | `%APPDATA%\TARS\vault-backups` unless `backup_path` is set |
+| Backups (vault, settings, history) | `%APPDATA%\TARS\vault-backups` unless `backup_path` is set |
 | Transcripts (text only, 7 days) | `%APPDATA%\TARS\data\transcripts` |
-| Daily log from `tars voice` (7 days) | `%APPDATA%\TARS\data\logs` |
+| Daily logs, crashes included, one per command (7 days) | `%APPDATA%\TARS\data\logs` (`tars-voice-*.log`, `desktop-*.log`, …) |
 | Per-turn timing and spend | `%APPDATA%\TARS\data\turns-*.jsonl`, `spend-*.jsonl` |
 | API keys and tokens | Windows Credential Manager, under "TARS" |

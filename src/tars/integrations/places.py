@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from .. import net
 from ..actions import ActionResult, Tier, Tool, ToolError, schema
 from ..config import LocationConfig
 
@@ -29,7 +30,7 @@ class Places:
     def __init__(self, location: LocationConfig, maps_key: str | None, http: httpx.AsyncClient | None = None):
         self.loc = location
         self.maps_key = maps_key
-        self.http = http or httpx.AsyncClient(timeout=10)
+        self.http = http or net.client(10)
 
     async def _get(self, url: str, **params: Any) -> dict[str, Any]:
         try:
@@ -100,7 +101,7 @@ class Places:
             resp = await self.http.post(ROUTES, json=body, headers={
                 "X-Goog-Api-Key": self.maps_key,
                 "X-Goog-FieldMask": "routes.duration,routes.staticDuration",
-            })
+            }, extensions={"idempotent": True})  # a route lookup changes nothing
             resp.raise_for_status()
         except httpx.HTTPError as e:
             raise ToolError("Google Maps isn't reachable right now.") from e

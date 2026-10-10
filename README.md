@@ -28,7 +28,9 @@ push-to-talk mic ─► Deepgram Flux ─► TarsBrain ─► ElevenLabs Flash v
 | `src/tars/actions.py` | Tools and their tiers (read / create for you / affects others); irreversible tools can't be registered |
 | `src/tars/integrations/` | Gmail, Google Calendar, Todoist (store-sectioned shopping list), Google Routes, Open-Meteo |
 | `src/tars/sanitize.py` | Strips HTML, hidden text and invisible characters from email and fences it as untrusted data |
-| `src/tars/memory.py` | The Obsidian vault: facts appended under known headings, "forget that", nightly backup |
+| `src/tars/memory.py` | The Obsidian vault: facts appended under known headings, "forget that" |
+| `src/tars/backup.py` | Nightly checked backup of the vault, settings and history; `tars restore` puts one back |
+| `src/tars/net.py` | The shared HTTP client: one retry for a network blip on reads, never a second send |
 | `src/tars/spend.py` | Cost ledger for Claude, Deepgram and ElevenLabs; stops escalating near the cap and pauses at it |
 | `src/tars/voice/` | Pipecat pipeline, push-to-talk mic with an 8-second follow-up window, phrase chunker, interruption |
 | `src/tars/ui/` | The desktop UI: design system (`static/`), pages, the local app server, live state and the Windows shell |
@@ -45,7 +47,8 @@ push-to-talk mic ─► Deepgram Flux ─► TarsBrain ─► ElevenLabs Flash v
 | Memory vault with "noted" / "forget that", 7-day transcripts, nightly backup | Proactive features (Phase 3) |
 | Morning brief at 9am, or as soon as the PC is on after 9 | |
 | Spend cap, per-turn response time and cost log, `tars status` | |
-| `tars check` (read-only test of every account), `tars devices`, daily log file | |
+| `tars check` (read-only test of every account), `tars devices`, daily log files with crashes | |
+| Backups you can restore (`tars restore`), one retry on network blips, Dependabot and `pip-audit` in CI | |
 | Memory map: `tars memory` or "show me my memory" opens everything TARS remembers as a map you can search and browse | |
 | CI on Windows and Linux, locked dependencies | |
 | Desktop UI from the "BRICK – AI PA concept" design: tray icon with 7 state shapes, overlay, History, Settings, setup wizard, Status | |

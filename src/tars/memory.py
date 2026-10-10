@@ -1,16 +1,15 @@
 """Long-term memory kept as plain Markdown in TARS's own Obsidian vault.
 
 Facts are small appends under known headings, so the file stays readable and
-editable in Obsidian. The vault is not synced; a nightly copy is the backup.
+editable in Obsidian. The vault is not synced; a nightly copy is the backup (see backup.py).
 """
 
 from __future__ import annotations
 
 import re
-import shutil
 import threading
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date
 from pathlib import Path
 
 HEADINGS = ["People", "Preferences", "Places", "Health", "Routines", "Other"]
@@ -129,19 +128,3 @@ class Vault:
             if line.startswith("## ") or line.startswith("- "):
                 out.append(line)
         return "\n".join(out)
-
-    def backup(self, backup_root: Path, keep_days: int = 30, today: date | None = None) -> Path:
-        today = today or date.today()
-        target = backup_root / today.isoformat()
-        if target.exists():
-            shutil.rmtree(target)
-        shutil.copytree(self.root, target)
-        cutoff = today - timedelta(days=keep_days)
-        for child in backup_root.iterdir():
-            try:
-                stamp = datetime.strptime(child.name, "%Y-%m-%d").date()
-            except ValueError:
-                continue
-            if stamp < cutoff:
-                shutil.rmtree(child)
-        return target

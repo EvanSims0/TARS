@@ -28,6 +28,7 @@ from pipecat.frames.frames import (
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from ..agent import Agent
+from ..sanitize import for_speech
 from ..spend import SpendLedger
 from .chunker import PhraseChunker
 
@@ -113,6 +114,7 @@ class TarsBrain(FrameProcessor):
 
         async def speak(phrase: str) -> None:
             nonlocal chars
+            phrase = for_speech(phrase)
             if phrase:
                 chars += len(phrase)
                 await self.push_frame(LLMTextFrame(phrase + " "))
@@ -152,6 +154,7 @@ class TarsBrain(FrameProcessor):
 
     async def announce(self, text: str) -> None:
         """Speak something unprompted, such as a finished timer."""
+        text = for_speech(text)
         self.ledger.record_tts(len(text))
         await self.push_frame(TTSSpeakFrame(text, append_to_context=False))
 
