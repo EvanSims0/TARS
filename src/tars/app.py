@@ -5,20 +5,21 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-import httpx
-
-from . import secrets
+from . import net, secrets
+from .actionlog import ActionLog
 from .actions import ToolRegistry
 from .agent import Agent, AnthropicBackend, Backend
 from .config import Config
 from .gate import ConfirmationGate
-from .local_tools import PersonalityListener, Timers, UndoStack, personality_tool
+from .local_tools import PersonalityListener, Timers, UndoStack, memory_map_tool, personality_tool
 from .local_tools import build_tools as local_tools
 from .memory import Vault
 from .mood import MoodMonitor
 from .personality import Personality, PersonalitySettings
 from .spend import SpendLedger, TurnLog
 from .transcripts import Transcripts
+from .ui.live import LiveState
+from .ui.server import AppServer, UiContext
 
 
 @dataclass
@@ -32,9 +33,15 @@ class App:
     turn_log: TurnLog
     personality: Personality
     mood: MoodMonitor
+    live: LiveState
+    actions: ActionLog
+    # The local pages: overlay, History, Settings, Setup, Memory, Status.
+    ui: AppServer
     # Called after a personality change, e.g. to switch the voice for the calm mode.
     personality_listeners: list[PersonalityListener] = field(default_factory=list)
     connected: dict[str, bool] = field(default_factory=dict)
+    # Set by the desktop shell: bring the overlay up (e.g. to review a parked draft).
+    show_overlay: Callable[[], None] | None = None
 
 
 def build_app(
@@ -53,6 +60,12 @@ def build_app(
     timers = Timers(announce)
     registry = ToolRegistry()
     registry.add(*local_tools(vault, transcripts, timers, undo))
+    live = LiveState(config.voice.follow_up_seconds)
+    actions = ActionLog(data, config.privacy.transcript_days)
+    actions.purge()
+    undo.on_undone = lambda undo_id: _mark_undone(actions, undo_id)
+    ui = AppServer(UiContext(config, vault, live=live))  # started the first time a page opens
+    registry.add(memory_map_tool(lambda: ui.open("memory")))
     defaults = config.personality
     personality = Personality.load(
         data / "personality.json",
@@ -62,7 +75,7 @@ def build_app(
     registry.add(personality_tool(personality, listeners))
     mood = MoodMonitor(personality)
     connected: dict[str, bool] = {}
-    http = httpx.AsyncClient(timeout=15)
+    http = net.client()
 
     from .integrations import places
 
@@ -107,8 +120,21 @@ def build_app(
         user_email=config.user_email,
         instructions=config.instructions(),
         personality=personality,
+        live=live,
+        actions=actions,
     )
-    return App(config, agent, timers, vault, transcripts, ledger, turn_log, personality, mood, listeners, connected)
+    app = App(config, agent, timers, vault, transcripts, ledger, turn_log, personality, mood, live, actions, ui,
+              listeners, connected)
+    ui.ctx.app = app
+    return app
+
+
+def _mark_undone(actions: ActionLog, undo_id: str) -> None:
+    """A spoken "undo" crosses the action off in History too."""
+    for action in actions.recent():
+        if action.get("undo_id") == undo_id and not action["undone"]:
+            actions.mark_undone(action["id"])
+            return
 
 
 def status_lines(app: App) -> list[str]:

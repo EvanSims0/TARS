@@ -7,7 +7,8 @@ from typing import Any
 
 import httpx
 
-from ..actions import Tier, Tool, ToolError, schema
+from .. import net
+from ..actions import ActionResult, Tier, Tool, ToolError, schema
 from ..config import LocationConfig
 
 FORECAST = "https://api.open-meteo.com/v1/forecast"
@@ -29,7 +30,7 @@ class Places:
     def __init__(self, location: LocationConfig, maps_key: str | None, http: httpx.AsyncClient | None = None):
         self.loc = location
         self.maps_key = maps_key
-        self.http = http or httpx.AsyncClient(timeout=10)
+        self.http = http or net.client(10)
 
     async def _get(self, url: str, **params: Any) -> dict[str, Any]:
         try:
@@ -100,7 +101,7 @@ class Places:
             resp = await self.http.post(ROUTES, json=body, headers={
                 "X-Goog-Api-Key": self.maps_key,
                 "X-Goog-FieldMask": "routes.duration,routes.staticDuration",
-            })
+            }, extensions={"idempotent": True})  # a route lookup changes nothing
             resp.raise_for_status()
         except httpx.HTTPError as e:
             raise ToolError("Google Maps isn't reachable right now.") from e
@@ -114,14 +115,16 @@ def build_tools(places: Places) -> list[Tool]:
     async def weather(args: dict[str, Any]) -> str:
         return await places.weather(args.get("place"), args.get("days") or 1)
 
-    async def leave_by(args: dict[str, Any]) -> str:
+    async def leave_by(args: dict[str, Any]) -> ActionResult:
         arrive = datetime.fromisoformat(args["arrive_by"])
         seconds = await places.travel_seconds(args["destination"], arrive, args.get("origin"))
         buffer = args.get("buffer_minutes", 10)
         leave = arrive - timedelta(seconds=seconds, minutes=buffer)
-        return (
+        note = f"Leave by {leave.hour % 12 or 12}:{leave:%M} · about {round(seconds / 60)} min with traffic"
+        return ActionResult(
             f"Drive takes about {round(seconds / 60)} minutes with traffic. "
-            f"Leave by {leave.isoformat(timespec='minutes')} to arrive {buffer} minutes early."
+            f"Leave by {leave.isoformat(timespec='minutes')} to arrive {buffer} minutes early.",
+            card={"kind": "address", "text": args["destination"], "note": note},
         )
 
     return [

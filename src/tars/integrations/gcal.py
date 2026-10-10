@@ -6,11 +6,13 @@ Anything that invites or notifies other people goes through the confirmation gat
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, tzinfo
 from typing import Any
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..actions import ActionResult, Tier, Tool, ToolError, schema
+from ..sanitize import wrap_untrusted
 from .google_auth import GoogleSession
 
 API = "https://www.googleapis.com/calendar/v3"
@@ -39,6 +41,31 @@ def _time(value: str, tz: str) -> dict[str, str]:
     if tz:
         body["timeZone"] = tz
     return body
+
+
+def _zone(tz: str) -> tzinfo | None:
+    try:
+        return ZoneInfo(tz) if tz else None
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+
+
+def instant(value: str, tz: str = "") -> datetime:
+    """A range bound as an aware datetime: a bare date means midnight, a bare time means local time.
+
+    Google needs RFC 3339 with an offset for time ranges and free/busy queries.
+    """
+    try:
+        if len(value) == 10:
+            parsed = datetime.combine(date.fromisoformat(value), datetime.min.time())
+        else:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as e:
+        raise ToolError(f"I couldn't read the time {value!r}.") from e
+    if parsed.tzinfo is None:
+        zone = _zone(tz)
+        parsed = parsed.replace(tzinfo=zone) if zone else parsed.astimezone()
+    return parsed
 
 
 def _has_guests(ev: dict[str, Any]) -> bool:
@@ -76,6 +103,26 @@ class Calendar:
             "timeMin": start, "timeMax": end, "items": [{"id": "primary"}],
         })
         return body["calendars"]["primary"].get("busy", [])
+
+
+def _clock(value: str) -> str:
+    """'2026-10-09T14:45:00-07:00' -> '2:45'; all-day events say 'all day'."""
+    if len(value) <= 10:
+        return "all day"
+    hour, minute = int(value[11:13]), value[14:16]
+    return f"{hour % 12 or 12}:{minute}"
+
+
+def events_card(items: list[dict[str, Any]], start: datetime, end: datetime) -> dict[str, Any]:
+    label = "TODAY" if (end - start) <= timedelta(days=1) and start.date() == datetime.now(start.tzinfo).date() \
+        else f"{start:%a %d %b}".upper()
+    rows = []
+    for ev in items:
+        title = ev.get("summary", "(no title)")
+        if ev.get("location"):
+            title += f" · {ev['location'].split(',')[0]}"
+        rows.append([_clock(_when(ev, "start")), title])
+    return {"kind": "list", "title": f"{label} · {len(items)} ITEM{'S' * (len(items) != 1)}", "rows": rows}
 
 
 def free_slots(busy: list[dict[str, str]], start: datetime, end: datetime, minutes: int) -> list[tuple[datetime, datetime]]:
@@ -123,16 +170,24 @@ def meeting_tally(events: list[dict[str, Any]], start: datetime, end: datetime) 
 
 
 def build_tools(cal: Calendar) -> list[Tool]:
-    async def list_events(args: dict[str, Any]) -> str:
-        items = await cal.events(args["start"], args["end"], args.get("query"))
+    def window(args: dict[str, Any]) -> tuple[datetime, datetime]:
+        start, end = instant(args["start"], cal.tz), instant(args["end"], cal.tz)
+        if end <= start and len(args["end"]) == 10:  # "2026-10-09 to 2026-10-09" means that whole day
+            end = instant((date.fromisoformat(args["end"]) + timedelta(days=1)).isoformat(), cal.tz)
+        return start, end
+
+    async def list_events(args: dict[str, Any]) -> ActionResult:
+        start, end = window(args)
+        items = await cal.events(start.isoformat(), end.isoformat(), args.get("query"))
         if not items:
-            return "Nothing on the calendar then."
-        return "\n".join(_describe(e) for e in items)
+            return ActionResult("Nothing on the calendar then.")
+        # Titles and places in other people's invites are outside text, like email.
+        text = wrap_untrusted("calendar", "\n".join(_describe(e) for e in items))
+        return ActionResult(text, card=events_card(items, start, end))
 
     async def find_free_time(args: dict[str, Any]) -> str:
-        start = datetime.fromisoformat(args["start"])
-        end = datetime.fromisoformat(args["end"])
-        slots = free_slots(await cal.busy(args["start"], args["end"]), start, end, args["minutes"])
+        start, end = window(args)
+        slots = free_slots(await cal.busy(start.isoformat(), end.isoformat()), start, end, args["minutes"])
         if not slots:
             return "No free gap that long in that window."
         return "\n".join(f"{a.isoformat()} to {b.isoformat()}" for a, b in slots[:8])
@@ -163,8 +218,8 @@ def build_tools(cal: Calendar) -> list[Tool]:
         return ActionResult(f"Moved: {_describe(updated)}", undo=undo, undo_label=f"move '{ev.get('summary')}'")
 
     async def meeting_time(args: dict[str, Any]) -> str:
-        start, end = datetime.fromisoformat(args["start"]), datetime.fromisoformat(args["end"])
-        return meeting_tally(await cal.events(args["start"], args["end"]), start, end)
+        start, end = window(args)
+        return meeting_tally(await cal.events(start.isoformat(), end.isoformat()), start, end)
 
     async def send_invite(args: dict[str, Any]) -> str:
         event = {
@@ -191,10 +246,14 @@ def build_tools(cal: Calendar) -> list[Tool]:
         )
         return f"Updated and guests notified: {_describe(updated)}"
 
-    def update_read_back(args: dict[str, Any]) -> str:
+    async def update_read_back(args: dict[str, Any]) -> str:
+        # Built from the event itself, not from what the model calls it.
+        ev = await cal.get(args["event_id"])
+        guests = [a["email"] for a in ev.get("attendees", []) if not a.get("self")]
+        who = ", ".join(guests) or "its guests"
         return (
-            f"Move event {args['event_id']} to {args['start']} until {args['end']} "
-            f"and notify all its guests ({args.get('summary', 'event')})."
+            f"Move '{ev.get('summary', '(no title)')}' to {args['start']} until {args['end']} "
+            f"and notify {who}."
         )
 
     times = {"start": {"type": "string", "description": "ISO 8601 with offset, or YYYY-MM-DD"},
@@ -223,7 +282,6 @@ def build_tools(cal: Calendar) -> list[Tool]:
                      "guests": {"type": "array", "items": {"type": "string"}}}, ["title", "start", "end", "guests"]),
              Tier.AFFECTS_OTHERS, send_invite, read_back=invite_read_back, service="Google Calendar"),
         Tool("update_shared_event", "Move an event that has other guests; they get notified.",
-             schema({"event_id": {"type": "string"}, **times, "summary": {"type": "string"}},
-                    ["event_id", "start", "end", "summary"]),
+             schema({"event_id": {"type": "string"}, **times}, ["event_id", "start", "end"]),
              Tier.AFFECTS_OTHERS, update_shared_event, read_back=update_read_back, service="Google Calendar"),
     ]

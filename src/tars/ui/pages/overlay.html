@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="tars-token" content="__TOKEN__">
+<title>TARS</title>
+<link rel="stylesheet" href="/static/tars.css">
+<style>
+  /* In the desktop shell the window is transparent around the card; in a browser tab the card
+     sits bottom-right on a dark backdrop, where the overlay appears on screen. */
+  html, body { background: transparent; }
+  body { padding: 0 8px 16px; display: flex; align-items: flex-end; justify-content: flex-end; min-height: 100vh; }
+  html.browser body { background: #1d262c; padding: 24px; }
+  .overlay { transition: opacity .25s; }
+  .overlay.fading { opacity: 0; }
+  .lead { font: 700 20px/1.45 var(--mono); }
+  .brief-rows { padding: 0; gap: 0; overflow: hidden; }
+  .brief-rows .r { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--slate); }
+  .brief-rows .r:last-child { border-bottom: 0; }
+  .brief-rows .r .k { width: 72px; flex: none; font: 500 10px/15px var(--mono); color: var(--text-2); }
+  .brief-rows .r .v { font-size: 13px; flex: 1; min-width: 0; }
+  .address { font-size: 15px; font-weight: 600; white-space: pre-line; }
+  .buttons { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .confirm-q { font-size: 14px; font-weight: 500; }
+  .quote { font-size: 15px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .problem-title { font-size: 15px; font-weight: 600; }
+  .follow { display: grid; gap: 8px; }
+  .follow .top { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); }
+  .follow .top .num { font: 500 12px var(--mono); }
+  .reply { min-height: 22px; }
+  .wave i { transition: height .12s ease-out; }
+  .expiry { font: 500 10px var(--mono); color: var(--text-2); }
+</style>
+</head>
+<body>
+<section class="overlay" id="card" aria-live="polite" aria-label="TARS"></section>
+<script src="/static/tars.js"></script>
+<script>
+(() => {
+  const { api, el, glyph, icon, key, toast, shortcut } = TARS;
+  const host = () => window.pywebview && window.pywebview.api;
+  if (!window.pywebview) document.documentElement.classList.add("browser");
+  window.addEventListener("pywebviewready", () => document.documentElement.classList.remove("browser"));
+
+  const card = document.getElementById("card");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let live = { state: "idle", version: -1 }, skew = 0, waveTimer = 0, tickTimer = 0, joked = false;
+
+  const TITLES = { idle: "Idle", listening: "Listening", thinking: "Thinking", speaking: "Speaking",
+                   confirm: "Needs confirmation", muted: "Muted", problem: "Problem" };
+  const now = () => Date.now() / 1000 + skew;
+
+  function header(state, title) {
+    return el("div", { class: "overlay-head" }, glyph(state === "confirm" ? "confirm" : state, 24),
+      el("span", { class: "title" }, title), el("span", { class: "spacer" }), key("Esc"),
+      TARS.el("span", { class: "grip pywebview-drag-region", title: "Drag to move" }, icon("grip", 16)));
+  }
+
+  function telemetry(right) {
+    const t = live.telemetry || { humor: 0, bluntness: 0, trust: 0 };
+    return el("div", { class: "telemetry" },
+      el("span", {}, `HUM ${t.humor} · BLU ${t.bluntness} · TRU ${t.trust}`),
+      el("span", { class: "right", id: "tele-right" }, right));
+  }
+
+  function you(past) {
+    if (!live.user_text) return null;
+    const hide = live.prefs && !live.prefs.live_transcript && !live.user_final;
+    return el("div", { class: "who" }, el("span", { class: "label" }, "You"),
+      el("div", { class: "said" + (past ? " past" : "") }, hide ? "…" : live.user_text));
+  }
+
+  function cueLight() {
+    if (!live.prefs || !live.prefs.cue_light) return null;
+    const on = !!live.joke;
+    const blink = on && !joked;  // blink once when the joke lands, then stay lit while the reply streams
+    joked = on;
+    return el("span", { class: "cue" + (on ? " on" : "") + (blink ? " blink" : ""), title: on ? "That line was a joke" : "No joke detected" },
+      el("i", { class: "light" }), "CUE");
+  }
+
+  function tars(text) {
+    return el("div", { class: "who" },
+      el("div", { class: "who-row" }, el("span", { class: "label" }, live.telemetry && live.telemetry.name === "Vela" ? "Vela" : "TARS"),
+        el("span", { class: "spacer" }), cueLight()),
+      el("div", { class: "said reply" }, text || "…"));
+  }
+
+  function listCard(c) {
+    const rows = c.rows || [];
+    const showAll = card.dataset.all === "1";
+    const visible = showAll ? rows : rows.slice(0, 3);
+    const box = el("div", { class: "card" }, el("span", { class: "label" }, c.title || "LIST"),
+      el("div", { class: "row-list" }, visible.map(([t, text]) =>
+        el("div", { class: "r" }, el("span", { class: "t" }, t || ""), el("span", { class: "body" }, text)))));
+    if (rows.length > 3 && !showAll) {
+      box.append(el("button", { type: "button", class: "link", onclick: showRest }, `Show all ${rows.length}`, key("A")));
+    }
+    return box;
+  }
+  function showRest() { card.dataset.all = "1"; render(); }
+
+  function addressCard(c) {
+    const maps = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(c.text);
+    return el("div", { class: "card" }, el("span", { class: "label" }, "Address"),
+      el("div", { class: "address" }, c.text),
+      c.note ? el("div", { class: "caption" }, c.note) : null,
+      el("div", { class: "buttons" },
+        el("button", { type: "button", class: "btn", onclick: copyAddress }, "Copy", key("C")),
+        el("a", { class: "btn", href: maps, target: "_blank", rel: "noopener" }, "Open map", key("M"))));
+  }
+  async function copyAddress() {
+    const c = live.card;
+    if (!c || c.kind !== "address") return;
+    try { await navigator.clipboard.writeText(c.text); toast("Address copied"); } catch { toast("Select the address to copy it"); }
+  }
+
+  function briefCard(c) {
+    return [
+      el("div", { class: "who" }, el("span", { class: "label" }, c.title), el("div", { class: "lead" }, c.lead)),
+      el("div", { class: "card brief-rows" }, (c.rows || []).map((r) =>
+        el("div", { class: "r" }, el("span", { class: "k" }, r.label), el("span", { class: "v" }, r.text),
+          el("span", { class: "badge " + (r.status === "GO" ? "go" : "hold") }, r.status)))),
+    ];
+  }
+
+  function wave() {
+    const box = el("div", { class: "wave", "aria-hidden": "true" });
+    for (let i = 0; i < 44; i++) box.append(el("i"));
+    return box;
+  }
+  function animateWave() {
+    clearInterval(waveTimer);
+    const bars = card.querySelectorAll(".wave i");
+    if (!bars.length) return;
+    const shape = (i, t) => 4 + Math.abs(Math.sin(i * 0.55 + t) * Math.cos(i * 0.21 - t * 0.7)) * 32;
+    let t = 0;
+    const step = () => { t += 0.35; bars.forEach((b, i) => { b.style.height = `${shape(i, reduce ? 0 : t)}px`; }); };
+    step();
+    if (!reduce) waveTimer = setInterval(step, 120);
+  }
+
+  function render() {
+    const s = live.state || "idle";
+    const kids = [];
+    const brief = live.brief && live.card && live.card.kind === "brief";
+    let right = "";
+    clearInterval(tickTimer);
+
+    if (s === "confirm" && live.confirm) {
+      const c = live.confirm;
+      kids.push(header("confirm", "Needs confirmation"));
+      if (c.tainted) kids.push(el("span", { class: "pill lg", style: "align-self:flex-start" }, icon("mail", 14), "This conversation has read email"));
+      kids.push(el("div", { class: "well" }, el("span", { class: "label" }, "Read-back"),
+        el("div", { class: "h3", style: "font-size:14px" }, c.title),
+        el("div", { class: "quote" }, c.quoted ? `“${c.body}”` : c.body)));
+      kids.push(el("div", { class: "confirm-q" }, c.question));
+      kids.push(el("div", { class: "buttons" },
+        el("button", { type: "button", class: "btn btn-primary", onclick: () => reply("yes") }, c.yes_label, key("Y")),
+        el("button", { type: "button", class: "btn", onclick: () => reply("no") }, "No", key("N")),
+        el("span", { class: "spacer" }), el("span", { class: "caption" }, "or just say it")));
+      kids.push(el("div", { class: "caption" }, c.affects_others ? "No, Esc or closing the card sends nothing." : "No, Esc or closing the card changes nothing."));
+      right = `TRUST ${(live.telemetry || {}).trust} · HELD`;
+    } else if (s === "problem" && live.problem) {
+      const p = live.problem;
+      kids.push(header("problem", "Problem"));
+      kids.push(el("div", { class: "problem-title" }, `${p.service} isn’t answering.`));
+      kids.push(el("div", { class: "small muted" }, `Next step: ${p.next}`));
+      kids.push(el("div", { class: "buttons" },
+        el("button", { type: "button", class: "btn btn-primary", onclick: () => TARS.openPage("settings", "accounts") }, "Open Accounts", key("A")),
+        el("button", { type: "button", class: "btn", onclick: dismiss }, "Dismiss", key("Esc"))));
+      right = `${p.short} · DOWN`;
+    } else if (brief) {
+      kids.push(header("speaking", "Morning brief"));
+      kids.push(...briefCard(live.card));
+      kids.push(tars(live.reply_text));
+      right = "BRIEF · MISSION";
+    } else if (s === "listening") {
+      kids.push(header("listening", "Listening"));
+      kids.push(you(false) || el("div", { class: "who" }, el("span", { class: "label" }, "You"),
+        el("div", { class: "said past" }, "Go ahead, I’m listening.")));
+      if (live.mic_closes_at) {
+        kids.push(el("div", { class: "follow" },
+          el("div", { class: "top" }, el("span", {}, "Follow-up window"), el("span", { class: "num", id: "follow-num" }, "")),
+          el("div", { class: "progress" }, el("i", { id: "follow-bar" }))));
+      }
+      kids.push(el("div", { class: "caption" }, live.prefs && live.prefs.live_transcript
+        ? "Live transcript is on. Turn it off in Settings → Voice." : "Live transcript is off. Your words show once you finish."));
+      right = "MIC OPEN";
+    } else if (s === "thinking") {
+      kids.push(header("thinking", "Thinking"));
+      kids.push(you(false));
+      kids.push(el("div", { class: "card" }, el("div", { class: "body", style: "font-weight:500" }, live.cue || "Working on it…"),
+        el("div", { class: "caption" }, "Usually under 3 s.")));
+      right = "T+0.0 S";
+    } else if (s === "speaking") {
+      kids.push(header("speaking", "Speaking"));
+      kids.push(wave());
+      kids.push(you(true));
+      kids.push(tars(live.reply_text));
+      if (live.card && live.card.kind === "list") kids.push(listCard(live.card));
+      if (live.card && live.card.kind === "address") kids.push(addressCard(live.card));
+      right = live.first_word_ms != null ? `REPLY ${(live.first_word_ms / 1000).toFixed(1)} S` : "REPLY";
+    } else if (s === "muted") {
+      kids.push(header("muted", "Muted"));
+      kids.push(el("div", { class: "small muted" }, "The microphone is off. Press Ctrl+Alt+M to turn it back on."));
+      right = "MIC OFF";
+    } else {
+      kids.push(header("idle", live.running === false ? "TARS isn’t running" : "Idle"));
+      if (live.user_text) { kids.push(you(true)); kids.push(tars(live.reply_text)); }
+      else kids.push(el("div", { class: "small muted" }, `Press ${(live.prefs || {}).talk_key || "the talk hotkey"} and speak.`));
+      right = "READY";
+    }
+    kids.push(telemetry(right));
+    card.replaceChildren(...kids.filter(Boolean));
+    if (s !== "speaking") delete card.dataset.all;
+    animateWave();
+    startTicks(s);
+    fit();
+  }
+
+  function startTicks(s) {
+    const tick = () => {
+      const right = document.getElementById("tele-right");
+      if (s === "thinking" && live.turn_started && right) right.textContent = `T+${Math.max(0, now() - live.turn_started).toFixed(1)} S`;
+      if (s === "listening" && live.mic_closes_at) {
+        const left = Math.max(0, live.mic_closes_at - now());
+        const num = document.getElementById("follow-num"), bar = document.getElementById("follow-bar");
+        if (num) num.textContent = `${Math.ceil(left)} s`;
+        if (bar) bar.style.width = `${Math.min(100, (left / (live.follow_up_seconds || 8)) * 100)}%`;
+        if (right) right.textContent = `MIC OPEN · ${Math.ceil(left)} S`;
+      }
+    };
+    tick();
+    if (s === "thinking" || s === "listening") tickTimer = setInterval(tick, 100);
+  }
+
+  function fit() {
+    const h = host();
+    if (h && h.fit) requestAnimationFrame(() => h.fit(card.offsetHeight + 24));
+  }
+
+  async function reply(text) {
+    try { await api("/api/reply", { text }); } catch (e) { toast(e.message); }
+  }
+  async function dismiss() {
+    try { await api("/api/control", { action: "dismiss" }); } catch {}
+    const h = host(); if (h && h.close) h.close();
+  }
+
+  shortcut("y", () => live.state === "confirm" && reply("yes"));
+  shortcut("n", () => live.state === "confirm" && reply("no"));
+  shortcut("Escape", () => live.state === "confirm" ? reply("no") : live.state === "problem" ? dismiss() : host() && host().close());
+  shortcut("a", () => live.state === "problem" ? TARS.openPage("settings", "accounts") : showRest());
+  shortcut("c", copyAddress);
+  shortcut("m", () => { const a = card.querySelector('a.btn'); if (a) a.click(); });
+
+  async function follow() {
+    for (;;) {
+      try {
+        const next = await api(`/api/live?since=${live.version}`);
+        skew = next.now - Date.now() / 1000;
+        live = next;
+        render();
+      } catch (e) {
+        live = { ...live, state: "idle", running: false };
+        render();
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+  }
+  render();
+  follow();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="tars-token" content="__TOKEN__">
+<title>TARS · Settings</title>
+<link rel="stylesheet" href="/static/tars.css">
+<style>
+  .split { grid-template-columns: 220px minmax(0, 1fr); }
+  .sidebar { padding: 16px 12px; }
+  .main { padding: 28px 32px; }
+  .pane { max-width: 714px; display: flex; flex-direction: column; gap: 26px; }
+  .intro { display: grid; gap: 6px; }
+  .row { display: flex; align-items: center; gap: 16px; }
+  .row .text { flex: 1; min-width: 0; display: grid; gap: 4px; }
+  .row .text .d { font-size: 13px; color: var(--text-2); }
+  .ctl { flex: none; display: flex; align-items: center; gap: 10px; }
+  .ctl .input { height: 40px; padding: 8px 12px; width: 240px; }
+  .ctl .input:focus-within { padding: 7px 11px; }
+  .ctl .input.short { width: 120px; }
+  .ctl .input input[type=number] { width: 60px; }
+  .seg { display: inline-flex; border: 1px solid var(--slate); border-radius: var(--r-button); padding: 3px; gap: 3px; }
+  .seg button { border: none; background: none; border-radius: 5px; padding: 6px 12px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--raised); color: var(--text); font-weight: 600; }
+  textarea.area { width: 100%; min-height: 72px; resize: vertical; background: transparent; border: 1px solid var(--slate);
+                  border-radius: var(--r-button); padding: 10px 12px; color: var(--text); font: 14px/1.45 var(--font); }
+  textarea.area:focus { outline: none; border: 2px solid var(--text); padding: 9px 11px; }
+  .list { display: grid; gap: 6px; }
+  .list .item { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; background: var(--card); border-radius: var(--r-button); }
+  .list .item span { flex: 1; font-size: 13px; }
+  .x { width: 28px; height: 28px; border-radius: var(--r-small); border: none; background: none; color: var(--text-2); cursor: pointer; }
+  .x:hover { background: var(--hover); color: var(--text); }
+  .confirm-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border: 1px solid var(--text); border-radius: var(--r-card); }
+  .confirm-bar .q { flex: 1; min-width: 220px; font-size: 13px; }
+  .acct { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; padding: 14px 16px; border-bottom: 1px solid var(--slate); align-items: center; }
+  .acct:last-child { border-bottom: none; }
+  .acct .name { font-size: 14px; font-weight: 600; }
+  .acct .result { grid-column: 1 / -1; font-size: 12px; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+  .status .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--slate); }
+  .status.ok { color: var(--text); } .status.ok .dot { background: var(--text); border-color: var(--text); }
+  .result.fail { color: var(--text); }
+  .result.fail::before { content: "\26A0  "; }
+  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .tile .big { font: 700 24px/1.45 var(--mono); }
+  .bars { display: grid; gap: 10px; }
+  .bars .b { display: grid; grid-template-columns: 110px 1fr 70px; gap: 12px; align-items: center; font-size: 13px; }
+  .bars .b .track2 { height: 6px; border-radius: 3px; background: var(--slate); overflow: hidden; }
+  .bars .b .track2 i { display: block; height: 100%; background: var(--text); }
+  .bars .b .num { text-align: right; }
+  .foot { display: flex; align-items: center; gap: 12px; padding-top: 10px; }
+  .note { font-size: 12px; color: var(--text-2); }
+  @media (max-width: 820px) {
+    .split { grid-template-columns: 1fr; }
+    .sidebar { flex-direction: row; flex-wrap: wrap; }
+    .nav-item { width: auto; padding-left: 12px; }
+    .nav-item .key { display: none; }
+    .row { flex-wrap: wrap; }
+    .ctl .input { width: 100%; }
+    .tiles { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="window">
+  <div id="titlebar"></div>
+  <div class="split">
+    <nav class="sidebar" id="nav" aria-label="Settings sections"></nav>
+    <main class="main"><div class="pane" id="pane"></div></main>
+  </div>
+</div>
+<script src="/static/tars.js"></script>
+<script>
+(() => {
+  const { api, el, icon, key, toast, shortcut, slider, toggle } = TARS;
+  document.getElementById("titlebar").replaceWith(TARS.titlebar("TARS · Settings"));
+  const TABS = [["voice", "Voice"], ["personality", "Personality"], ["brief", "Brief"], ["alerts", "Alerts"],
+                ["email", "Email"], ["accounts", "Accounts"], ["spend", "Spend"], ["privacy", "Privacy"]];
+  let data = null, tab = (location.hash.slice(1) || "personality");
+  if (!TABS.some(([id]) => id === tab)) tab = "personality";
+
+  function renderNav() {
+    document.getElementById("nav").replaceChildren(...TABS.map(([id, label], i) =>
+      el("button", { type: "button", class: "nav-item", "aria-current": tab === id ? "page" : null,
+        onclick: () => go(id) }, label, key(`Ctrl+${i + 1}`))));
+  }
+  function go(id) { tab = id; history.replaceState(null, "", "#" + id); renderNav(); render(); }
+  TABS.forEach(([id], i) => shortcut(`ctrl+${i + 1}`, () => go(id)));
+  window.addEventListener("hashchange", () => {
+    const id = location.hash.slice(1);
+    if (TABS.some(([t]) => t === id) && id !== tab) go(id);
+  });
+
+  async function save(values) {
+    try {
+      const r = await api("/api/settings", { values });
+      toast(r.restart.length ? "Saved. Applies when TARS restarts." : "Saved");
+      data = await api("/api/settings");
+      return true;
+    } catch (e) { toast(e.message); return false; }
+  }
+
+  const intro = (title, text) => el("div", { class: "intro" }, el("h1", { class: "h2" }, title), el("p", { class: "body muted", style: "margin:0" }, text));
+  const row = (title, desc, control) => el("div", { class: "row" },
+    el("div", { class: "text" }, el("span", { class: "h3" }, title), desc ? el("span", { class: "d" }, desc) : null),
+    el("div", { class: "ctl" }, control));
+  function textInput(id, value, onSave, opts = {}) {
+    const input = el("input", { id, value: value ?? "", type: opts.type || "text", class: opts.mono ? "mono" : "",
+      min: opts.min, max: opts.max, step: opts.step, "aria-label": opts.label || id, placeholder: opts.placeholder || "" });
+    input.addEventListener("change", () => onSave(opts.type === "number" ? Number(input.value) : input.value.trim()));
+    return el("label", { class: "input" + (opts.short ? " short" : "") }, input, opts.suffix ? el("span", { class: "caption" }, opts.suffix) : null);
+  }
+
+  // ---------- Personality (from the design) ----------
+  const HUMOR = (v) => v === 0 ? "At 0%: “Moved your 3pm to 4.”"
+    : v <= 30 ? `At ${v}%: “Moved your 3pm to 4. Dana said thanks.”`
+    : v <= 60 ? `At ${v}%: “Moved your 3pm. Dana seemed relieved.”`
+    : v <= 85 ? `At ${v}%: “Moved your 3pm. Dana seemed relieved. I didn’t ask why.”`
+    : `At ${v}%: “Moved your 3pm. Dana seemed relieved. I’ve started a file on what she’s relieved about.”`;
+  const BLUNT = (v) => v <= 30 ? `At ${v}%: “Interesting draft. Want me to tighten it up?”`
+    : v <= 60 ? `At ${v}%: “It’s on the long side. Want a shorter version?”`
+    : `At ${v}%: “That email is three paragraphs of apology wrapped around one sentence. Want just the sentence?”`;
+  const TRUST = (v) => v < 80 ? `At ${v}%: reads back anything that changes your lists, calendar or email filing before doing it.`
+    : `At ${v}%: handles your own lists, calendar holds and filing without asking. Sends still need a yes.`;
+
+  function personality() {
+    const p = data.personality;
+    const pane = [intro("Personality", "Same values as the voice commands. Change one here and TARS hears about it, and the other way round.")];
+    const send = async (values, input) => {
+      try { const r = await api("/api/personality", values); toast(r.summary); data = await api("/api/settings"); }
+      catch (e) {
+        if (e.status === 409) return askTrust(values.trust, input);
+        toast(e.message); if (input) render();
+      }
+    };
+    pane.push(slider({ id: "humor", label: "Humor", value: p.humor, onInput: HUMOR, onChange: (v) => send({ humor: v }) }));
+    pane.push(slider({ id: "bluntness", label: "Bluntness", value: p.bluntness, onInput: BLUNT, onChange: (v) => send({ bluntness: v }) }));
+    const trust = slider({ id: "trust", label: "Trust", value: p.trust, onInput: TRUST, onChange: (v, input) => send({ trust: v }, input),
+      extra: el("span", { class: "pill" }, "Raising it asks you to confirm") });
+    pane.push(trust);
+    const confirmSlot = el("div", { id: "confirm-slot" });
+    pane.push(confirmSlot);
+    function askTrust(value) {
+      const bar = el("div", { class: "confirm-bar", role: "alertdialog", "aria-label": "Confirm raising trust" },
+        el("span", { class: "q" }, `Raise trust to ${value}%? TARS will stop asking before changing your lists, calendar and email filing.`),
+        el("button", { type: "button", class: "btn btn-primary", id: "trust-yes", onclick: async () => {
+          confirmSlot.replaceChildren();
+          try { const r = await api("/api/personality", { trust: value, confirmed: true }); toast(r.summary); data = await api("/api/settings"); }
+          catch (e) { toast(e.message); } render(); } }, "Yes, raise it", key("Y")),
+        el("button", { type: "button", class: "btn", onclick: () => { confirmSlot.replaceChildren(); trust.set(data.personality.trust); } }, "No", key("N")));
+      confirmSlot.replaceChildren(bar);
+      bar.querySelector("#trust-yes").focus();
+    }
+    pane.push(el("hr", { class: "rule" }));
+    pane.push(row("Vela", "A second, calmer voice. Literal, polite, zero jokes. For days when you want answers, not banter.",
+      toggle({ id: "vela", label: "Vela mode", checked: p.calm, onChange: (on) => send({ calm: on }) })));
+    pane.push(el("div", { class: "row" },
+      el("div", { class: "text" }, el("div", { style: "display:flex;gap:10px;align-items:center" }, el("span", { class: "h3" }, "Cue light"),
+          el("span", { class: "cue on" }, el("i", { class: "light" }), "CUE")),
+        el("span", { class: "d" }, "Lights up on the overlay when a line is a joke. For anyone who can’t hear sarcasm through a headset.")),
+      el("div", { class: "ctl" }, toggle({ id: "cue", label: "Cue light", checked: p.cue_light, onChange: (on) => send({ cue_light: on }) }))));
+    pane.push(el("div", { class: "foot" }, el("span", { class: "caption" }, "Or say “humor sixty percent.” ← → moves the focused slider."),
+      el("span", { class: "spacer" }),
+      el("button", { type: "button", class: "btn", onclick: () => send({ humor: 70, bluntness: 60, calm: false }) }, "Reset to defaults")));
+    shortcut("y", () => document.getElementById("trust-yes")?.click());
+    shortcut("n", () => confirmSlot.firstChild && confirmSlot.querySelector(".btn:not(.btn-primary)").click());
+    return pane;
+  }
+
+  // ---------- Voice ----------
+  async function voice() {
+    const v = data.voice;
+    const devices = await api("/api/devices").catch(() => ({ available: false, inputs: [], outputs: [] }));
+    const pick = (id, list, current, dotted) => {
+      const sel = el("select", { id, "aria-label": id },
+        el("option", { value: "" }, "Windows default"),
+        list.map((d) => el("option", { value: d.index, selected: d.index === current ? "" : null }, `${d.index} · ${d.name}`)));
+      sel.addEventListener("change", () => save({ [dotted]: sel.value === "" ? null : Number(sel.value) }));
+      return el("label", { class: "input" }, sel);
+    };
+    return [
+      intro("Voice", "How you talk to TARS and how it sounds. Hotkeys and devices apply when TARS restarts."),
+      row("Talk hotkey", "Opens the mic. Pressing it while TARS talks interrupts it.",
+        textInput("ptt", v.push_to_talk_key, (x) => save({ "voice.push_to_talk_key": x }), { mono: true, label: "Talk hotkey" })),
+      row("Mute hotkey", "Turns the mic off until you press it again.",
+        textInput("mute", v.mute_key, (x) => save({ "voice.mute_key": x }), { mono: true, label: "Mute hotkey" })),
+      row("Follow-up window", "How long the mic stays open after TARS answers, so a follow-up doesn’t need the hotkey.",
+        textInput("follow", v.follow_up_seconds, (x) => save({ "voice.follow_up_seconds": x }),
+          { type: "number", min: 3, max: 30, step: 1, short: true, suffix: "seconds", label: "Follow-up window" })),
+      row("Live transcript", "Show your words on the overlay as you speak.",
+        toggle({ id: "live", label: "Live transcript", checked: v.live_transcript, onChange: (on) => save({ "voice.live_transcript": on }) })),
+      row("TARS voice", "Your original ElevenLabs voice. Change it in config.toml.",
+        el("span", { class: "key", style: "height:28px;font-size:12px" }, v.tts_voice_id || "not set")),
+      row("Vela voice", "Optional second voice for Vela. Leave empty to keep TARS’s voice.",
+        textInput("vela-voice", v.calm_voice_id, (x) => save({ "voice.calm_voice_id": x }), { mono: true, label: "Vela voice ID", placeholder: "ElevenLabs voice ID" })),
+      devices.available ? row("Microphone", "Your headset’s mic.", pick("in", devices.inputs, v.input_device_index, "voice.input_device_index")) : null,
+      devices.available ? row("Speaker", "Your headset.", pick("out", devices.outputs, v.output_device_index, "voice.output_device_index"))
+        : el("p", { class: "note" }, "Audio devices show here when the voice extras are installed."),
+    ];
+  }
+
+  // ---------- Brief ----------
+  function brief() {
+    const b = data.brief;
+    const seg = el("div", { class: "seg", role: "group", "aria-label": "Brief style" },
+      [["mission", "Mission checklist"], ["plain", "Plain summary"]].map(([val, label]) =>
+        el("button", { type: "button", "aria-pressed": String(b.style === val), onclick: () => save({ "brief.style": val }).then(render) }, label)));
+    const contents = el("textarea", { class: "area", id: "contents", "aria-label": "What the brief covers" }, b.contents);
+    contents.addEventListener("change", () => save({ "brief.contents": contents.value.trim() }));
+    return [
+      intro("Brief", "The morning brief: spoken once a day at the set time, or as soon as the PC is on after it."),
+      row("Morning brief", "Turn it off and it only happens when you ask.",
+        toggle({ id: "brief-on", label: "Morning brief", checked: b.enabled, onChange: (on) => save({ "brief.enabled": on }) })),
+      row("Time", "Never during quiet hours.", textInput("brief-time", b.time, (x) => save({ "brief.time": x }), { type: "time", short: true, label: "Brief time" })),
+      row("Style", "Mission reads it as a pre-launch checklist, with GO and HOLD for each system.", seg),
+      el("div", { class: "field" }, el("span", { class: "h3" }, "What it covers"), contents),
+      el("div", { class: "foot" }, el("button", { type: "button", class: "btn btn-primary", onclick: async () => {
+        try { await api("/api/reply", { text: "Give me my morning brief." }); toast("Starting the brief"); } catch (e) { toast(e.message); }
+      } }, "Give me the brief now")),
+    ];
+  }
+
+  // ---------- Alerts ----------
+  function alerts() {
+    const a = data.alerts;
+    return [
+      intro("Alerts", "When TARS may speak up unprompted. The morning brief already keeps to quiet hours; proactive alerts arrive in Phase 3."),
+      row("Alerts a day", "The most TARS will raise without being asked.",
+        textInput("max", a.max_per_day, (x) => save({ "alerts.max_per_day": x }), { type: "number", min: 0, max: 20, short: true, label: "Alerts a day" })),
+      row("Quiet hours start", null, textInput("qs", a.quiet_start, (x) => save({ "alerts.quiet_start": x }), { type: "time", short: true, label: "Quiet hours start" })),
+      row("Quiet hours end", null, textInput("qe", a.quiet_end, (x) => save({ "alerts.quiet_end": x }), { type: "time", short: true, label: "Quiet hours end" })),
+    ];
+  }
+
+  // ---------- Email ----------
+  function email() {
+    const e = data.email;
+    const editor = (items, dotted, placeholder) => {
+      const add = el("input", { placeholder, "aria-label": placeholder });
+      const commit = () => { const v = add.value.trim(); if (v) save({ [dotted]: [...items, v] }).then(render); };
+      add.addEventListener("keydown", (ev) => { if (ev.key === "Enter") commit(); });
+      return el("div", { class: "list" }, items.map((text, i) => el("div", { class: "item" }, el("span", {}, text),
+        el("button", { type: "button", class: "x", "aria-label": `Remove ${text}`,
+          onclick: () => save({ [dotted]: items.filter((_, j) => j !== i) }).then(render) }, "×"))),
+        el("div", { style: "display:flex;gap:10px" }, el("label", { class: "input", style: "flex:1;height:40px;padding:8px 12px" }, add),
+          el("button", { type: "button", class: "btn", onclick: commit }, "Add")));
+    };
+    return [
+      intro("Email", "What makes an email urgent. TARS mentions urgent mail first and never reads out a long list."),
+      el("div", { class: "field" }, el("span", { class: "h3" }, "Urgent when it’s about"), editor(e.urgent, "email.urgent", "Add a rule, e.g. a message from my landlord")),
+      el("div", { class: "field" }, el("span", { class: "h3" }, "Never urgent"), editor(e.ignore, "email.ignore", "Add, e.g. school newsletters")),
+    ];
+  }
+
+  // ---------- Accounts ----------
+  function accounts() {
+    const box = el("div", { class: "card", style: "padding:0;gap:0" });
+    for (const a of data.accounts) {
+      const result = el("div", { class: "result caption", "aria-live": "polite" });
+      const actions = el("div", { class: "ctl" });
+      const status = el("span", { class: "status" + (a.set ? " ok" : "") }, el("i", { class: "dot" }),
+        a.set ? (a.no_key ? "Set up" : "Connected") : a.optional ? "Optional" : "Not set up");
+      const check = el("button", { type: "button", class: "btn btn-sm", onclick: async () => {
+        result.className = "result caption"; result.textContent = "Checking…";
+        try {
+          const r = await api("/api/accounts/check", { service: a.service });
+          result.replaceChildren(...r.results.map((x) => el("div", { class: x.ok === false ? "fail" : "" }, `${x.name}: ${x.detail}`)));
+          result.className = "result caption" + (r.results.some((x) => x.ok === false) ? " fail" : "");
+        } catch (e) { result.textContent = e.message; }
+      } }, "Check");
+      if (a.key === "GOOGLE") {
+        const file = el("input", { type: "file", accept: ".json,application/json", hidden: true });
+        file.addEventListener("change", async () => {
+          const text = await file.files[0].text();
+          try { const r = await api("/api/accounts/google", { client: JSON.parse(text) }); result.textContent = r.message; }
+          catch (e) { result.textContent = e.message; }
+        });
+        actions.append(check, el("button", { type: "button", class: "btn btn-sm", onclick: async () => {
+          if (!a.set) return file.click();
+          try { const r = await api("/api/accounts/google", {}); result.textContent = r.message; } catch (e) { result.textContent = e.message; }
+        } }, a.set ? "Reconnect" : "Connect…"), file);
+      } else if (a.no_key) {
+        actions.append(check, el("button", { type: "button", class: "btn btn-sm", onclick: () => TARS.openPage("setup") }, "Change home"));
+      } else {
+        const keyInput = el("input", { type: "password", class: "mono", placeholder: "Paste the new key", "aria-label": `${a.service} key`, autocomplete: "off" });
+        const form = el("div", { class: "result", hidden: true, style: "display:flex;gap:10px" },
+          el("label", { class: "input", style: "flex:1;height:40px;padding:8px 12px" }, icon("lock", 16), keyInput),
+          el("button", { type: "button", class: "btn btn-primary", onclick: async () => {
+            result.textContent = "Saving and checking…";
+            try {
+              const r = await api("/api/accounts/key", { name: a.key, value: keyInput.value });
+              keyInput.value = ""; form.hidden = true;
+              result.replaceChildren(...r.results.map((x) => el("div", { class: x.ok === false ? "fail" : "" }, `${x.name}: ${x.detail}`)));
+              data = await api("/api/settings");
+            } catch (e) { result.textContent = e.message; }
+          } }, "Save", key("Enter")));
+        keyInput.addEventListener("keydown", (ev) => { if (ev.key === "Enter") form.querySelector(".btn-primary").click(); });
+        if (a.set) actions.append(check);
+        actions.append(el("button", { type: "button", class: "btn btn-sm",
+          onclick: () => { form.hidden = !form.hidden; if (!form.hidden) keyInput.focus(); } }, a.set ? "Replace key" : "Add key"));
+        box.append(el("div", { class: "acct" }, el("div", {}, el("div", { class: "name" }, a.service), status), actions, form, result));
+        continue;
+      }
+      box.append(el("div", { class: "acct" }, el("div", {}, el("div", { class: "name" }, a.service), status), actions, result));
+    }
+    return [intro("Accounts", "Keys live in Windows Credential Manager. After saving, a key is never shown again. Not even to you."), box];
+  }
+
+  // ---------- Spend ----------
+  function spend() {
+    const s = data.spend;
+    const max = Math.max(0.01, ...Object.values(s.by_service));
+    return [
+      intro("Spend", "Everything billed by use: Claude, Deepgram and ElevenLabs. Near the cap TARS stops using the deeper model; at the cap it pauses."),
+      el("div", { class: "tiles" },
+        el("div", { class: "card tile" }, el("span", { class: "label" }, "This month"), el("div", { class: "big" }, `$${s.month.toFixed(2)}`),
+          el("span", { class: "caption" }, `of $${s.cap.toFixed(0)}`), el("div", { class: "mini" }, el("i", { style: `width:${Math.min(100, s.month / s.cap * 100)}%` }))),
+        el("div", { class: "card tile" }, el("span", { class: "label" }, "Today"), el("div", { class: "big" }, `$${s.today.toFixed(2)}`), el("span", { class: "caption" }, "so far")),
+        el("div", { class: "card tile" }, el("span", { class: "label" }, "Deeper model stops at"), el("div", { class: "big" }, `$${(s.cap * s.cutoff).toFixed(0)}`),
+          el("span", { class: "caption" }, `${Math.round(s.cutoff * 100)}% of the cap`))),
+      el("div", { class: "bars" }, Object.entries(s.by_service).map(([name, usd]) =>
+        el("div", { class: "b" }, el("span", {}, name), el("div", { class: "track2" }, el("i", { style: `width:${usd / max * 100}%` })),
+          el("span", { class: "num" }, `$${usd.toFixed(2)}`)))),
+      row("Monthly cap", "Also set a limit in the Anthropic console as a backstop.",
+        textInput("cap", s.cap, (x) => save({ "spend.monthly_cap_usd": x }), { type: "number", min: 1, max: 1000, step: 1, short: true, suffix: "USD", label: "Monthly cap" })),
+      slider({ id: "cutoff", label: "Stop using the deeper model at", value: Math.round(s.cutoff * 100),
+        onInput: (v) => `At ${v}%: Sonnet stops at $${(s.cap * v / 100).toFixed(2)}; Haiku keeps answering until the cap.`,
+        onChange: (v) => save({ "spend.escalation_cutoff": Math.max(10, v) / 100 }) }),
+    ];
+  }
+
+  // ---------- Privacy ----------
+  function privacy() {
+    const p = data.privacy;
+    const slot = el("div");
+    return [
+      intro("Privacy", "What stays on this PC and for how long. No audio is ever stored."),
+      row("Keep transcripts", "Text of what you said and what TARS answered. The daily log follows the same limit.",
+        textInput("tdays", p.transcript_days, (x) => save({ "privacy.transcript_days": x }), { type: "number", min: 1, max: 90, short: true, suffix: "days", label: "Keep transcripts" })),
+      row("Keep memory backups", "Nightly copies of the memory vault.",
+        textInput("bdays", p.backup_days, (x) => save({ "privacy.backup_days": x }), { type: "number", min: 1, max: 365, short: true, suffix: "days", label: "Keep memory backups" })),
+      row("Memory", "Everything TARS remembers, as a map you can browse and forget from.",
+        el("button", { type: "button", class: "btn", onclick: () => TARS.openPage("memory") }, "Open memory map")),
+      row("Forget all transcripts", "Removes every saved conversation now. Memory and actions stay.",
+        el("button", { type: "button", class: "btn", onclick: () => slot.replaceChildren(el("div", { class: "confirm-bar" },
+          el("span", { class: "q" }, "Forget every saved conversation? This can’t be undone."),
+          el("button", { type: "button", class: "btn btn-primary", onclick: async () => {
+            try { const r = await api("/api/privacy/clear", { confirm: true }); toast(`Forgot ${r.removed} day${r.removed === 1 ? "" : "s"} of transcripts`); }
+            catch (e) { toast(e.message); } slot.replaceChildren(); } }, "Forget them"),
+          el("button", { type: "button", class: "btn", onclick: () => slot.replaceChildren() }, "Keep them"))) }, "Forget all…")),
+      slot,
+      el("p", { class: "note" }, `Settings, data and the memory vault live in ${p.home}.`),
+    ];
+  }
+
+  const PANES = { personality, voice, brief, alerts, email, accounts, spend, privacy };
+  async function render() {
+    const pane = document.getElementById("pane");
+    if (!data) return;
+    if (!data.running && ["personality"].includes(tab)) {
+      pane.replaceChildren(intro("Personality", "Start TARS (tars voice or tars chat) to change its personality here."));
+      return;
+    }
+    const kids = await PANES[tab]();
+    pane.replaceChildren(...kids.filter(Boolean));
+  }
+
+  (async () => {
+    renderNav();
+    try { data = await api("/api/settings"); } catch (e) { document.getElementById("pane").replaceChildren(el("p", {}, e.message)); return; }
+    render();
+  })();
+})();
+</script>
+</body>
+</html>

@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from .. import net
 from ..actions import ActionResult, Tier, Tool, ToolError, schema
 from ..config import TodoistConfig
 
@@ -18,7 +19,7 @@ BASE_URL = "https://api.todoist.com/api/v1"
 
 class TodoistClient:
     def __init__(self, token: str, http: httpx.AsyncClient | None = None):
-        self._http = http or httpx.AsyncClient(timeout=10)
+        self._http = http or net.client(10)
         self._headers = {"Authorization": f"Bearer {token}"}
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
@@ -121,11 +122,13 @@ def build_tools(client: TodoistClient, config: TodoistConfig) -> list[Tool]:
             undo_label=f"add task '{task['content']}'",
         )
 
-    async def list_tasks(args: dict[str, Any]) -> str:
+    async def list_tasks(args: dict[str, Any]) -> ActionResult:
         tasks = await client.tasks(args.get("filter") or "today | overdue")
         if not tasks:
-            return "No matching tasks."
-        return f"{len(tasks)} tasks:\n" + "\n".join(_describe(t) for t in tasks)
+            return ActionResult("No matching tasks.")
+        rows = [[((t.get("due") or {}).get("string") or "")[:10], t["content"]] for t in tasks]
+        card = {"kind": "list", "title": f"TASKS · {len(tasks)}", "rows": rows}
+        return ActionResult(f"{len(tasks)} tasks:\n" + "\n".join(_describe(t) for t in tasks), card=card)
 
     async def complete_task(args: dict[str, Any]) -> ActionResult:
         await client.close_task(args["task_id"])
@@ -153,7 +156,7 @@ def build_tools(client: TodoistClient, config: TodoistConfig) -> list[Tool]:
         names = ", ".join(t["content"] for t in added)
         return ActionResult(f"Added {names} under {store}.", undo=undo, undo_label=f"add {names}")
 
-    async def read_shopping(args: dict[str, Any]) -> str:
+    async def read_shopping(args: dict[str, Any]) -> ActionResult | str:
         project = await find_project(config.shopping_project, create=False)
         sections = {s["id"]: s["name"] for s in await client.sections(project["id"])}
         tasks = await client.tasks(f"#{config.shopping_project}")
@@ -165,7 +168,12 @@ def build_tools(client: TodoistClient, config: TodoistConfig) -> list[Tool]:
             if args.get("store") and store.lower() != args["store"].lower():
                 continue
             by_store.setdefault(store, []).append(f"{t['content']} [id {t['id']}]")
-        return "\n".join(f"{store}: {', '.join(items)}" for store, items in by_store.items()) or "Nothing for that store."
+        if not by_store:
+            return "Nothing for that store."
+        rows = [[store, item.rsplit(" [id", 1)[0]] for store, items in by_store.items() for item in items]
+        title = (args.get("store") or "SHOPPING").upper()
+        return ActionResult("\n".join(f"{store}: {', '.join(items)}" for store, items in by_store.items()),
+                            card={"kind": "list", "title": f"{title} · {len(rows)}", "rows": rows})
 
     async def reschedule(args: dict[str, Any]) -> ActionResult:
         before = await client.get_task(args["task_id"])
@@ -177,6 +185,9 @@ def build_tools(client: TodoistClient, config: TodoistConfig) -> list[Tool]:
                 await client.update_task(args["task_id"], due_datetime=old_due)
             elif old_due:
                 await client.update_task(args["task_id"], due_date=old_due)
+            else:
+                await client.update_task(args["task_id"], due_string="no date")
+                return "Took the date off again."
             return "Put the old date back."
 
         return ActionResult(f"Rescheduled '{task.get('content', before.get('content'))}' to {args['due']}.",

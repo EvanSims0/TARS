@@ -19,8 +19,9 @@ from pipecat.workers.runner import WorkerRunner
 
 from .. import secrets
 from ..app import build_app
-from ..brief import BRIEF_REQUEST, BriefScheduler
+from ..brief import BRIEF_REQUEST, BriefScheduler, mission_card
 from ..config import Config
+from ..ui import desktop
 from .brain import TarsBrain
 from .mic import MicController, transport
 
@@ -58,7 +59,8 @@ def build_voice(config: Config, app, show_state: Callable[[str], None], deepgram
         "input_device_index": config.voice.input_device_index,
         "output_device_index": config.voice.output_device_index,
     })
-    mic = MicController(audio.input(), config.voice.follow_up_seconds, show_state, app.ledger.record_stt)
+    mic = MicController(audio.input(), config.voice.follow_up_seconds, show_state, app.ledger.record_stt,
+                        on_window=app.live.mic_window)
     stt = DeepgramFluxSTTService(
         api_key=deepgram_key,
         mip_opt_out=True,  # stay out of Deepgram's model-improvement program
@@ -109,8 +111,13 @@ async def run_voice(config: Config) -> None:
         await brain_ref["brain"].announce(text)
 
     app = build_app(config, announce)
+
+    def state(name: str) -> None:
+        show_state(name)
+        app.live.set_state(name)
+
     worker, brain, mic = build_voice(
-        config, app, show_state, _require(secrets.DEEPGRAM_API_KEY), _require(secrets.ELEVENLABS_API_KEY),
+        config, app, state, _require(secrets.DEEPGRAM_API_KEY), _require(secrets.ELEVENLABS_API_KEY),
     )
     brain_ref["brain"] = brain
 
@@ -127,15 +134,31 @@ async def run_voice(config: Config) -> None:
     })
     hotkeys.start()
 
+    # The overlay's buttons and the tray menu act through the same paths as the hotkeys and your voice.
+    ctx = app.ui.ctx
+    ctx.loop = loop
+    ctx.submit = lambda text: loop.call_soon_threadsafe(lambda: asyncio.ensure_future(brain.typed(text)))
+    ctx.controls.update({
+        "talk": on_talk,
+        "mute": lambda: loop.call_soon_threadsafe(mic.toggle_mute),
+        "quit": lambda: loop.call_soon_threadsafe(lambda: asyncio.ensure_future(worker.cancel())),
+    })
+    app.ui.start()
+    shell = desktop.launch(app.ui)
+
     for name, ok in app.connected.items():
         logger.info(f"{'connected' if ok else 'not set up'}: {name}")
     if parked := app.agent.gate.parked():
         logger.info(f"{len(parked)} draft(s) from the phone are waiting for you.")
-    show_state("idle")
+    state("idle")
+
+    async def deliver_brief() -> None:
+        await brain.start_turn(BRIEF_REQUEST)
+        asyncio.create_task(_brief_card(app))
 
     brief = BriefScheduler(
         config.brief, config.alerts, config.data_dir / "last-brief.txt",
-        deliver=lambda: brain.start_turn(BRIEF_REQUEST),
+        deliver=deliver_brief,
         busy=lambda: brain.busy or mic.mic.is_open,
     )
 
@@ -155,3 +178,18 @@ async def run_voice(config: Config) -> None:
             task.cancel()
         hotkeys.stop()
         mic.close()
+        if shell is not None:
+            shell.terminate()
+        app.ui.stop()
+
+
+async def _brief_card(app) -> None:
+    """Fill the overlay's mission checklist once the brief's turn has started."""
+    for _ in range(30):
+        if app.live.snapshot()["brief"]:
+            break
+        await asyncio.sleep(0.1)
+    try:
+        app.live.show_card(await mission_card(app))
+    except Exception as e:  # the spoken brief goes ahead without the card
+        logger.debug(f"brief card: {e}")

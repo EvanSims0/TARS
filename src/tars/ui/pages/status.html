@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="tars-token" content="__TOKEN__">
+<title>TARS · Status</title>
+<link rel="stylesheet" href="/static/tars.css">
+<style>
+  .wrap { padding: 24px 28px; display: grid; gap: 20px; max-width: 760px; }
+  .hero { display: flex; align-items: center; gap: 16px; }
+  .hero .glyph { width: 48px; height: 48px; }
+  .hero .state { font-size: 22px; font-weight: 700; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .acct { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--slate); font-size: 13px; }
+  .acct:last-child { border-bottom: none; }
+  .acct .dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--slate); flex: none; }
+  .acct.ok .dot { background: var(--text); border-color: var(--text); }
+  .acct .s { margin-left: auto; color: var(--text-2); font-size: 12px; }
+  .kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; font-size: 13px; border-bottom: 1px solid var(--slate); }
+  .kv:last-child { border-bottom: none; }
+  .kv .v { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  @media (max-width: 640px) { .cols { grid-template-columns: 1fr; } .wrap { padding: 20px 16px; } }
+</style>
+</head>
+<body>
+<div class="window">
+  <div id="titlebar"></div>
+  <main><div class="wrap" id="wrap"></div></main>
+</div>
+<script src="/static/tars.js"></script>
+<script>
+(() => {
+  const { api, el, glyph, key, shortcut, STATE_NAMES } = TARS;
+  document.getElementById("titlebar").replaceWith(TARS.titlebar("TARS · Status"));
+  const SUB = { idle: "Waiting for the hotkey.", listening: "Hearing you.", thinking: "Working on it.", speaking: "Talking. Talk over it to interrupt.",
+                confirm: "Waiting for your yes or no.", muted: "The microphone is off.", problem: "A service is down." };
+
+  async function load() {
+    let s;
+    try { s = await api("/api/status"); } catch (e) { document.getElementById("wrap").replaceChildren(el("p", {}, e.message)); return; }
+    const state = s.running ? s.state : "idle";
+    const kids = [el("div", { class: "hero" }, glyph(state, 48), el("div", {},
+      el("div", { class: "state" }, s.running ? STATE_NAMES[state] : "TARS isn’t running"),
+      el("div", { class: "small muted" }, s.running ? (s.problem ? `${s.problem.service} is down. Next step: ${s.problem.next}` : SUB[state])
+        : "Start it with tars voice, or sign out and in if it starts at login.")))];
+    const accounts = el("div", { class: "card" }, el("span", { class: "label" }, "Connected"),
+      el("div", {}, s.accounts.map((a) => el("div", { class: "acct" + (a.set ? " ok" : "") }, el("i", { class: "dot" }), el("span", {}, a.service),
+        el("span", { class: "s" }, a.set ? "yes" : a.optional ? "optional" : "not set up")))));
+    const t = s.today || {};
+    const fmt = (ms) => ms === undefined ? "–" : `${(ms / 1000).toFixed(1)} s`;
+    const today = el("div", { class: "card" }, el("span", { class: "label" }, "Today"), el("div", {},
+      el("div", { class: "kv" }, el("span", {}, "Turns"), el("span", { class: "v" }, String(t.turns ?? 0))),
+      el("div", { class: "kv" }, el("span", {}, "Typical first word"), el("span", { class: "v" }, fmt(t.first_word_p50_ms))),
+      el("div", { class: "kv" }, el("span", {}, "9 in 10 under"), el("span", { class: "v" }, fmt(t.first_word_p90_ms))),
+      el("div", { class: "kv" }, el("span", {}, "Under 3 s"), el("span", { class: "v" }, t.under_3s_share === undefined ? "–" : `${Math.round(t.under_3s_share * 100)}%`)),
+      el("div", { class: "kv" }, el("span", {}, "Spend today"), el("span", { class: "v" }, t.spend_today === undefined ? "–" : `$${t.spend_today.toFixed(2)}`)),
+      el("div", { class: "kv" }, el("span", {}, "This month"), el("span", { class: "v" }, t.spend_month === undefined ? "–" : `$${t.spend_month.toFixed(2)} of $${t.cap.toFixed(0)}`)),
+      s.personality ? el("div", { class: "kv" }, el("span", {}, s.personality.name),
+        el("span", { class: "v" }, `HUM ${s.personality.humor} · BLU ${s.personality.bluntness} · TRU ${s.personality.trust}`)) : null,
+      s.drafts ? el("div", { class: "kv" }, el("span", {}, "Drafts waiting"), el("span", { class: "v" }, String(s.drafts))) : null,
+      ...Object.entries(s.timers || {}).map(([name, left]) => el("div", { class: "kv" }, el("span", {}, `${name} timer`),
+        el("span", { class: "v" }, `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`)))));
+    kids.push(el("div", { class: "cols" }, accounts, today));
+    kids.push(el("div", { class: "actions" },
+      el("button", { type: "button", class: "btn", onclick: () => TARS.openPage("history") }, "History", key("H")),
+      el("button", { type: "button", class: "btn", onclick: () => TARS.openPage("settings") }, "Settings", key("S")),
+      el("button", { type: "button", class: "btn", onclick: () => TARS.openPage("memory") }, "Memory", key("M")),
+      el("button", { type: "button", class: "btn", onclick: () => TARS.openPage("setup") }, "Set up again")));
+    document.getElementById("wrap").replaceChildren(...kids);
+  }
+  shortcut("h", () => TARS.openPage("history"));
+  shortcut("s", () => TARS.openPage("settings"));
+  shortcut("m", () => TARS.openPage("memory"));
+  load();
+  setInterval(() => { if (!document.hidden) load(); }, 5000);
+})();
+</script>
+</body>
+</html>

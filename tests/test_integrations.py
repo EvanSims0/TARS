@@ -133,6 +133,74 @@ async def test_weather_and_leave_by():
     tools = by_name(places.build_tools(p))
     weather = await tools["get_weather"].handler({})
     assert "partly cloudy" in weather and "70% chance of rain" in weather
-    leave = await tools["leave_by_time"].handler({"destination": "Dentist", "arrive_by": "2099-10-08T15:00:00-04:00"})
-    assert "about 25 minutes" in leave and "2099-10-08T14:25-04:00" in leave
+    res = await tools["leave_by_time"].handler({"destination": "Dentist", "arrive_by": "2099-10-08T15:00:00-04:00"})
+    assert "about 25 minutes" in res.content and "2099-10-08T14:25-04:00" in res.content
+    assert res.card == {"kind": "address", "text": "Dentist", "note": "Leave by 2:25 · about 25 min with traffic"}
     assert json.loads(route.calls[0].request.content)["routingPreference"] == "TRAFFIC_AWARE"
+
+
+def test_subject_rules_match_between_read_back_and_send():
+    assert gmail.reply_subject(None, "", is_reply=False) == ""
+    assert gmail.reply_subject(None, "Lunch?", is_reply=True) == "Re: Lunch?"
+    assert gmail.reply_subject(None, "RE: Lunch?", is_reply=True) == "RE: Lunch?"
+    assert gmail.reply_subject("Plans", "Lunch?", is_reply=True) == "Plans"
+
+
+@respx.mock
+async def test_new_email_without_subject_is_sent_as_read_back():
+    sent = respx.post(f"{gmail.API}/messages/send").respond(json={"id": "s1"})
+    tools = by_name(gmail.build_tools(gmail.Gmail(_session())))
+    args = {"to": ["me@x.com"], "body": "TARS test three"}
+    assert await tools["send_email"].read_back(args) == \
+        "Email to me@x.com, with no subject, saying: \"TARS test three\"."
+    await tools["send_email"].handler(args)
+    raw = base64.urlsafe_b64decode(json.loads(sent.calls[0].request.content)["raw"]).decode()
+    assert "Re:" not in raw
+
+
+def test_calendar_range_bounds_get_an_offset():
+    assert gcal.instant("2026-10-09", "America/New_York").isoformat() == "2026-10-09T00:00:00-04:00"
+    assert gcal.instant("2026-10-09T15:00:00", "America/New_York").isoformat() == "2026-10-09T15:00:00-04:00"
+    assert gcal.instant("2026-10-09T15:00:00Z").isoformat() == "2026-10-09T15:00:00+00:00"
+    with pytest.raises(gcal.ToolError):
+        gcal.instant("next tuesday")
+
+
+@respx.mock
+async def test_list_events_sends_rfc3339_for_a_bare_date():
+    route = respx.get(f"{gcal.CAL}/events").respond(json={"items": []})
+    tools = by_name(gcal.build_tools(gcal.Calendar(_session(), "America/New_York")))
+    await tools["list_events"].handler({"start": "2026-10-09", "end": "2026-10-10"})
+    params = route.calls[0].request.url.params
+    assert params["timeMin"] == "2026-10-09T00:00:00-04:00"
+    assert params["timeMax"] == "2026-10-10T00:00:00-04:00"
+
+
+@respx.mock
+async def test_reschedule_undo_clears_a_date_that_was_not_there():
+    respx.get(f"{T}/tasks/t1").respond(json={"id": "t1", "content": "call Mom", "due": None})
+    update = respx.post(f"{T}/tasks/t1").respond(json={"id": "t1", "content": "call Mom"})
+    tools = by_name(todoist.build_tools(todoist.TodoistClient("tok"), TodoistConfig()))
+    res = await tools["reschedule_task"].handler({"task_id": "t1", "due": "Saturday 10am"})
+    assert await res.undo() == "Took the date off again."
+    assert json.loads(update.calls[-1].request.content) == {"due_string": "no date"}
+
+
+@respx.mock
+async def test_shared_event_read_back_uses_the_real_event():
+    respx.get(f"{gcal.CAL}/events/e1").respond(json={"id": "e1", "summary": "Board review",
+        "attendees": [{"email": "me@x", "self": True}, {"email": "sam@x"}]})
+    tools = by_name(gcal.build_tools(gcal.Calendar(_session())))
+    text = await tools["update_shared_event"].read_back(
+        {"event_id": "e1", "start": "2026-10-09T10:00:00-04:00", "end": "2026-10-09T11:00:00-04:00"})
+    assert text == ("Move 'Board review' to 2026-10-09T10:00:00-04:00 until 2026-10-09T11:00:00-04:00 "
+                    "and notify sam@x.")
+
+
+@respx.mock
+async def test_same_bare_date_for_start_and_end_means_that_whole_day():
+    route = respx.get(f"{gcal.CAL}/events").respond(json={"items": []})
+    tools = by_name(gcal.build_tools(gcal.Calendar(_session(), "America/New_York")))
+    await tools["list_events"].handler({"start": "2026-10-09", "end": "2026-10-09"})
+    params = route.calls[0].request.url.params
+    assert (params["timeMin"], params["timeMax"]) == ("2026-10-09T00:00:00-04:00", "2026-10-10T00:00:00-04:00")
